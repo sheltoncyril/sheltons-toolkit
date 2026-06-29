@@ -1,9 +1,18 @@
 {
-  "version": "1.0.0",
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sheltons-toolkit",
+  "description": "Opinionated multi-persona PR review with confidence scoring — and whatever else ends up being useful",
+  "owner": {
+    "name": "Shelton Cyril",
+    "email": "sheltoncyril@gmail.com"
+  },
   "plugins": [
     {
       "name": "sheltons-toolkit",
-      "description": "Opinionated multi-persona PR review with confidence scoring",
+      "description": "Multi-persona PR review with confidence scoring",
+      "author": {
+        "name": "Shelton Cyril"
+      },
       "source": {
         "source": "local",
         "path": "."
