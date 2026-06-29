@@ -83,6 +83,40 @@ Group by file. Add a "war-crime" severity for things that are technically legal 
 
 End with a one-liner. Something memorable. The kind of comment that gets screenshotted and posted in the team Slack.
 
+### 7. Post as PR review (pending approval)
+
+After presenting findings, ask the user: **"Post these as a PR review? (approve / comment / request changes / skip)"**
+
+**Important:** When posting unhinged-review findings to a real PR, tone down the roasts to be professional but firm. Keep the substance, lose the chaos. Nobody wants "war-crime" severity in their GitHub notifications.
+
+If user approves posting:
+
+1. Create a review with inline comments using `gh api`:
+   ```bash
+   gh api repos/<owner>/<repo>/pulls/<number>/reviews \
+     --method POST \
+     -f event="COMMENT" \
+     -f body="<overall summary — professional version>" \
+     --jq '.id'
+   ```
+   Use `APPROVE`, `COMMENT`, or `REQUEST_CHANGES` as the event based on the verdict.
+
+2. For inline comments, include them in the review creation:
+   ```bash
+   gh api repos/<owner>/<repo>/pulls/<number>/reviews \
+     --method POST \
+     -f event="COMMENT" \
+     -f body="<overall summary>" \
+     --jq '.id' \
+     -f 'comments[][path]=<file>' \
+     -f 'comments[][position]=<diff-line>' \
+     -f 'comments[][body]=<finding — professional tone>'
+   ```
+
+3. Confirm to user what was posted with a link to the review.
+
+If user says skip, do nothing. **Never auto-post without explicit approval.**
+
 ## Tone
 
 - Chaotic energy. Like a code review written at 2am after three espressos.

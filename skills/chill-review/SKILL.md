@@ -66,6 +66,38 @@ If nothing real found, say so: "Looks good. Ship it."
 - **Approve with caveats** — Minor concerns worth noting but not blocking.
 - **Request changes** — Something will break or is unsafe. Explain what.
 
+### 6. Post as PR review (pending approval)
+
+After presenting findings, ask the user: **"Post these as a PR review? (approve / comment / request changes / skip)"**
+
+If user approves posting:
+
+1. Create a pending review with inline comments for each finding using `gh api`:
+   ```bash
+   gh api repos/<owner>/<repo>/pulls/<number>/reviews \
+     --method POST \
+     -f event="COMMENT" \
+     -f body="<overall summary>" \
+     --jq '.id'
+   ```
+   Use `APPROVE`, `COMMENT`, or `REQUEST_CHANGES` as the event based on the verdict.
+
+2. For inline comments, include them in the review creation:
+   ```bash
+   gh api repos/<owner>/<repo>/pulls/<number>/reviews \
+     --method POST \
+     -f event="COMMENT" \
+     -f body="<overall summary>" \
+     --jq '.id' \
+     -f 'comments[][path]=<file>' \
+     -f 'comments[][position]=<diff-line>' \
+     -f 'comments[][body]=<finding>'
+   ```
+
+3. Confirm to user what was posted with a link to the review.
+
+If user says skip, do nothing. **Never auto-post without explicit approval.**
+
 ## Tone
 
 - Relaxed. Conversational. Like a code review over coffee.

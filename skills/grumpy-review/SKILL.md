@@ -77,6 +77,38 @@ Group by file.
 - **Approve with nits** — Merge-worthy but sloppy edges. List what to fix.
 - **Request changes** — Blocking issues. List what must change.
 
+### 6. Post as PR review (pending approval)
+
+After presenting findings, ask the user: **"Post these as a PR review? (approve / comment / request changes / skip)"**
+
+If user approves posting:
+
+1. Create a review with inline comments using `gh api`:
+   ```bash
+   gh api repos/<owner>/<repo>/pulls/<number>/reviews \
+     --method POST \
+     -f event="COMMENT" \
+     -f body="<overall summary>" \
+     --jq '.id'
+   ```
+   Use `APPROVE`, `COMMENT`, or `REQUEST_CHANGES` as the event based on the verdict.
+
+2. For inline comments, include them in the review creation:
+   ```bash
+   gh api repos/<owner>/<repo>/pulls/<number>/reviews \
+     --method POST \
+     -f event="COMMENT" \
+     -f body="<overall summary>" \
+     --jq '.id' \
+     -f 'comments[][path]=<file>' \
+     -f 'comments[][position]=<diff-line>' \
+     -f 'comments[][body]=<finding>'
+   ```
+
+3. Confirm to user what was posted with a link to the review.
+
+If user says skip, do nothing. **Never auto-post without explicit approval.**
+
 ## Tone
 
 - Blunt, not cruel. Technical substance always.
