@@ -171,17 +171,29 @@ If user approves posting:
 
 1. **Tone adjustment for posting:** Use professional language in posted comments. Keep the technical substance from all personas but drop the roasts and chaos. Parenthetical unhinged commentary stays in the terminal output only.
 
-2. Post a review with inline comments using `gh api`:
+2. Write a JSON file to `/tmp/review-body.json` with this structure:
+   ```json
+   {
+     "event": "APPROVE|COMMENT|REQUEST_CHANGES",
+     "body": "## Review Summary\n\nconfidence breakdown here",
+     "comments": [
+       {
+         "path": "path/to/file.py",
+         "line": 42,
+         "body": "finding in professional tone"
+       }
+     ]
+   }
+   ```
+
+3. Post using `--input` (NOT `-f` flags — GitHub API rejects `-f` for nested comment arrays):
    ```bash
    gh api repos/<owner>/<repo>/pulls/<number>/reviews \
      --method POST \
-     -f event="<APPROVE|COMMENT|REQUEST_CHANGES>" \
-     -f body="<summary with confidence breakdown>" \
-     -f 'comments[][path]=<file>' \
-     -f 'comments[][position]=<diff-line>' \
-     -f 'comments[][body]=<finding — professional tone>'
+     --input /tmp/review-body.json \
+     --jq '{id: .id, state: .state, html_url: .html_url}'
    ```
 
-3. Confirm to user what was posted with a link to the review.
+4. Confirm to user what was posted with a link to the review.
 
 If user says skip, do nothing. **Never auto-post without explicit approval.**
