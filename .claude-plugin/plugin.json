@@ -5,8 +5,6 @@
   "author": {
     "name": "Shelton Cyril"
   },
-  "repository": {
-    "url": "https://github.com/sheltoncyril/sheltons-toolkit.git"
-  },
+  "repository": "https://github.com/sheltoncyril/sheltons-toolkit",
   "license": "MIT"
 }
