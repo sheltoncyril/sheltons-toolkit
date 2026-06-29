@@ -8,12 +8,14 @@ Three reviewers. Three personalities. One merged verdict.
 
 ## Caveman Mode
 
-If caveman mode is active in the session (look for "CAVEMAN MODE ACTIVE" in system reminders), compress all output:
+If caveman mode is active in the session (look for "CAVEMAN MODE ACTIVE" in system reminders), compress all terminal output:
 - Drop articles, filler, pleasantries, hedging
 - Fragments OK
 - Findings format stays structured but descriptions go terse
 - Verdict stays clear
 - Code blocks and file paths unchanged
+
+**Exception:** When posting PR comments via `gh api`, always use normal professional English. Be direct but courteous — the kind of review comment you'd want to receive. No caveman, no roasts, no chaos. These are public-facing.
 
 ## Input
 
