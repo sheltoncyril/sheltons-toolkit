@@ -40,6 +40,18 @@ Short summary before spawning agents:
 - **Stats:** +additions / -deletions, N files, N commits
 - **What it does:** 2-3 sentences
 
+### 2.5. Local context enrichment (if available)
+
+Before spawning agents, check if the repo exists locally (e.g., `../repo-name` or the current working directory). If it does:
+
+1. **Read fixture/helper definitions** referenced in the diff — agents reviewing test code without fixture context produce false positives about missing setup, wrong parameters, or broken fixture chains.
+2. **Read conftest.py files** in the same directory and parent directories of changed files.
+3. **Read utility modules** imported by changed files.
+
+Include this context in each agent's prompt alongside the diff. This dramatically reduces false positives on test PRs where the real logic lives in fixtures.
+
+If no local repo available, proceed with diff-only review and note in the output that findings may need validation against fixture definitions.
+
 ### 3. Spawn 3 review agents in parallel
 
 Use the Agent tool to spawn 3 agents **in a single message** so they run concurrently. Pass each agent the full PR diff and metadata. Each agent must return findings as structured JSON.
