@@ -1,0 +1,12 @@
+{
+  "name": "sheltons-toolkit",
+  "description": "Shelton's personal Claude Code toolkit — opinionated PR reviews, code quality skills, and more",
+  "version": "1.0.0",
+  "author": {
+    "name": "Shelton Cyril"
+  },
+  "repository": {
+    "url": "https://github.com/sheltoncyril/sheltons-toolkit.git"
+  },
+  "license": "MIT"
+}
