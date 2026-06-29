@@ -14,8 +14,8 @@
         "name": "Shelton Cyril"
       },
       "source": {
-        "source": "local",
-        "path": "."
+        "source": "github",
+        "repo": "sheltoncyril/sheltons-toolkit"
       }
     }
   ]
