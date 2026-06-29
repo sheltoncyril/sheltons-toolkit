@@ -6,6 +6,15 @@ description: Multi-persona PR review. Spawns 3 parallel agents (chill, grumpy, u
 
 Three reviewers. Three personalities. One merged verdict.
 
+## Caveman Mode
+
+If caveman mode is active in the session (look for "CAVEMAN MODE ACTIVE" in system reminders), compress all output:
+- Drop articles, filler, pleasantries, hedging
+- Fragments OK
+- Findings format stays structured but descriptions go terse
+- Verdict stays clear
+- Code blocks and file paths unchanged
+
 ## Input
 
 `$ARGUMENTS` is a GitHub PR URL (e.g., `https://github.com/org/repo/pull/123`) or a repo/PR shorthand (e.g., `org/repo#123`).

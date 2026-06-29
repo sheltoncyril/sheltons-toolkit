@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "sheltons-toolkit",
+      "description": "Opinionated multi-persona PR review with confidence scoring",
+      "source": {
+        "source": "local",
+        "path": "."
+      }
+    }
+  ]
+}
