@@ -466,12 +466,72 @@ def evaluate_ticket(ticket, rules_by_id, matrix, version_patterns, pr_data, conf
 
 # --- Report Formatting ---
 
+RULES_PAGE = "https://redhat.atlassian.net/wiki/spaces/RHODS/pages/431230832/Team+Jira+Hygiene+Rules"
+
+RULE_SECTION_ANCHORS = {
+    "GEN": "1.-General-Ticket-Standards",
+    "WF": "2.-Workflow-&-Status-Rules",
+    "PR": "3.-PR-Linking-Rules",
+    "FV": "4.-fixVersion-&-Backport-Rules",
+    "CF": "5.-Code-Freeze-Rules",
+    "RES": "6.-Resolution-&-Closure-Rules",
+    "MATRIX": "Appendix-A-%E2%80%94-Required-Fields-Matrix",
+}
+
+
+RULE_TITLES = {
+    "GEN-1": "Active sprint tickets must have assignee",
+    "GEN-2": "Clear summary and description required",
+    "GEN-3": "Correct issue type and component required",
+    "GEN-4": "Priority must be explicitly set",
+    "GEN-5": "Bugs need Affects Version and severity",
+    "GEN-6": "Stale In Progress ticket",
+    "GEN-7": "Exempt via hygiene-bot-ignore",
+    "WF-1": "PR exists but ticket not In Progress",
+    "WF-2": "PR ready for review but ticket not in Review",
+    "WF-3": "Changes requested but ticket not In Progress",
+    "WF-4": "All PRs merged but ticket not Closed",
+    "WF-5": "PR closed without merging",
+    "WF-6": "Closed with missing backports",
+    "WF-7": "Workflow transitions skipped",
+    "PR-1": "Branch/PR title must include ticket key",
+    "PR-2": "No PRs linked to ticket",
+    "PR-3": "Too many PRs on one ticket",
+    "PR-4": "Backport PR missing cherry-pick reference",
+    "FV-1": "Merged PR but no fixVersion",
+    "FV-2": "fixVersion doesn't match branches with fix",
+    "FV-3": "Oldest release branch not in fixVersions",
+    "FV-4": "fixVersion claimed without confirmed fix",
+    "FV-5": "Backports overdue (>2 business days)",
+    "FV-6": "Released version is immutable",
+    "FV-7": "Non-standard fixVersion naming",
+    "CF-2": "Past freeze but ticket not Closed",
+    "CF-4": "Code freeze approaching",
+    "CF-5": "Post-freeze merge without exception label",
+    "RES-1": "Closure criteria not met",
+    "RES-2": "Closed without resolution value",
+    "RES-3": "Won't Fix/Duplicate without explanation",
+    "RES-4": "Closed without QA sign-off",
+    "MATRIX": "Required fields missing for current status",
+}
+
+
+def rule_link(rule_id):
+    prefix = rule_id.split("-")[0]
+    anchor = RULE_SECTION_ANCHORS.get(prefix, "")
+    title = RULE_TITLES.get(rule_id, "")
+    if title:
+        return f"[{rule_id}]({RULES_PAGE}#{anchor} \"{title}\")"
+    return f"[{rule_id}]({RULES_PAGE}#{anchor})"
+
+
 def format_report(results, sprint_vetting, summary, freeze_dates, freeze_source, user_name):
     lines = []
     lines.append("## Jira Hygiene Report\n")
     lines.append(f"**User:** {user_name}")
     lines.append(f"**Scope:** {summary['scope']}")
     lines.append(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    lines.append(f"**Rules:** [{RULES_PAGE.split('/')[-1].replace('+', ' ')}]({RULES_PAGE})")
 
     if freeze_dates:
         today = datetime.now(timezone.utc).date()
@@ -524,10 +584,10 @@ def format_report(results, sprint_vetting, summary, freeze_dates, freeze_source,
         lines.append("### Violations by Rule\n")
         lines.append("| Rule | Count | Severity | Auto-fixable |")
         lines.append("|------|-------|----------|-------------|")
-        for rule_id, count in cat_counts.most_common():
-            sev = next((v["severity"] for v in all_v if v["rule_id"] == rule_id), "?")
-            auto = "Yes" if any(v.get("auto_fixable") for v in all_v if v["rule_id"] == rule_id) else "No"
-            lines.append(f"| {rule_id} | {count} | {sev} | {auto} |")
+        for rid, count in cat_counts.most_common():
+            sev = next((v["severity"] for v in all_v if v["rule_id"] == rid), "?")
+            auto = "Yes" if any(v.get("auto_fixable") for v in all_v if v["rule_id"] == rid) else "No"
+            lines.append(f"| {rule_link(rid)} | {count} | {sev} | {auto} |")
         lines.append("")
 
     # Per-ticket detail
@@ -543,7 +603,7 @@ def format_report(results, sprint_vetting, summary, freeze_dates, freeze_source,
             lines.append("|---|------|----------|-----------|----------|")
             for i, v in enumerate(r["violations"], 1):
                 auto = "Yes" if v.get("auto_fixable") else "No"
-                lines.append(f"| {i} | {v['rule_id']} | {v['severity']} | {v['message']} | {auto} |")
+                lines.append(f"| {i} | {rule_link(v['rule_id'])} | {v['severity']} | {v['message']} | {auto} |")
             lines.append("")
 
     # Exempt
