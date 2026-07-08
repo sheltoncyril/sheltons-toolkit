@@ -224,7 +224,7 @@ def vet_sprints(tickets):
         if not in_active_sprint:
             findings.append({
                 "key": key,
-                "summary": get_field(t, "fields.summary", "")[:80],
+                "summary": get_field(t, "fields.summary", ""),
                 "finding": "In Progress but not in any active sprint",
                 "type": "SPRINT-VET",
             })
@@ -246,7 +246,7 @@ def evaluate_ticket(ticket, rules_by_id, matrix, version_patterns, pr_data, conf
 
     result = {
         "key": key,
-        "summary": get_field(ticket, "fields.summary", "")[:80],
+        "summary": get_field(ticket, "fields.summary", ""),
         "status": status,
         "assignee": assignee_name,
         "issue_type": issue_type,
@@ -508,7 +508,7 @@ def format_report(results, sprint_vetting, summary, freeze_dates, freeze_source,
         lines.append("|--------|---------|---------|")
         for sv in sprint_vetting:
             link = f"[{sv['key']}](https://redhat.atlassian.net/browse/{sv['key']})"
-            lines.append(f"| {link} | {sv['summary'][:50]} | {sv['finding']} |")
+            lines.append(f"| {link} | {sv['summary']} | {sv['finding']} |")
         lines.append("")
 
     # Violations by category
