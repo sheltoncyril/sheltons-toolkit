@@ -1,0 +1,42 @@
+{
+  "description": "Required fields by issue type and status. From Confluence page Appendix A.",
+  "matrix": {
+    "Bug": {
+      "New": ["priority", "severity", "versions"],
+      "To Do": ["priority", "severity", "versions"],
+      "In Progress": ["assignee", "components", "priority", "severity", "versions"],
+      "Review": ["assignee", "components", "priority", "severity", "versions", "pr_link"],
+      "Closed": ["assignee", "components", "priority", "severity", "versions", "pr_link", "fixVersions", "qa_signoff", "resolution"]
+    },
+    "Story": {
+      "New": ["priority"],
+      "To Do": ["priority"],
+      "In Progress": ["assignee", "components", "priority"],
+      "Review": ["assignee", "components", "priority", "pr_link"],
+      "Closed": ["assignee", "components", "priority", "pr_link", "fixVersions", "qa_signoff", "resolution"]
+    },
+    "Task": {
+      "New": ["priority"],
+      "To Do": ["priority"],
+      "In Progress": ["assignee", "components", "priority"],
+      "Review": ["assignee", "components", "priority", "pr_link"],
+      "Closed": ["assignee", "components", "priority", "resolution"]
+    }
+  },
+  "field_mappings": {
+    "assignee": "fields.assignee",
+    "components": "fields.components",
+    "priority": "fields.priority",
+    "severity": "fields.customfield_12316142",
+    "versions": "fields.versions",
+    "pr_link": "_pr_links_from_dev_panel",
+    "fixVersions": "fields.fixVersions",
+    "qa_signoff": "fields.customfield_12319940",
+    "resolution": "fields.resolution"
+  },
+  "notes": {
+    "severity_field_id": "customfield_12316142 — confirm via getJiraIssue with fields=['*all'] on a bug ticket",
+    "qa_signoff_field_id": "customfield_12319940 — confirm via getJiraIssue with fields=['*all'] on a closed story",
+    "pr_link": "Not a Jira field — checked via Teamwork Graph or GitHub/GitLab CLI"
+  }
+}

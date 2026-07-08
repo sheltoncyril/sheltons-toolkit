@@ -1,0 +1,42 @@
+{
+  "description": "RHOAI fixVersion naming conventions from Appendix B. Used by FV-7 validation.",
+  "patterns": [
+    {
+      "name": "minor_release",
+      "regex": "^rhoai-\\d+\\.\\d+$",
+      "example": "rhoai-3.4",
+      "usage": "Minor release"
+    },
+    {
+      "name": "patch_release",
+      "regex": "^rhoai-\\d+\\.\\d+\\.\\d+$",
+      "example": "rhoai-3.4.1",
+      "usage": "Z-stream / patch release"
+    },
+    {
+      "name": "early_access",
+      "regex": "^rhoai-\\d+\\.\\d+\\.EA\\d+$",
+      "example": "rhoai-3.5.EA1",
+      "usage": "Early access milestone"
+    },
+    {
+      "name": "zstream_placeholder",
+      "regex": "^rhoai-\\d+\\.\\d+\\.z$",
+      "example": "rhoai-3.4.z",
+      "usage": "Z-stream placeholder (all patches in a line)"
+    },
+    {
+      "name": "ga_marker",
+      "regex": "^\\d+\\.\\d+(\\.\\d+)? GA RHOAI$",
+      "example": "3.4.1 GA RHOAI",
+      "usage": "GA release marker"
+    },
+    {
+      "name": "milestone_marker",
+      "regex": "^\\d+\\.\\d+ (EA\\d+|GA) RHOAI RELEASE$",
+      "example": "3.5 EA1 RHOAI RELEASE",
+      "usage": "Major milestone release marker"
+    }
+  ],
+  "validation_note": "Use exact version names from Jira's version picker. Do not invent new naming patterns."
+}
