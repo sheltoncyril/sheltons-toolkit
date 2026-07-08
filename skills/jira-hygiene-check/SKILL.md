@@ -1,25 +1,28 @@
 ---
 name: check
 description: >
-  Check Jira tickets against team hygiene rules. Supports single ticket, sprint,
-  JQL, or all-open checks. Reports violations with rule IDs and actionable fixes.
-  Opt-in auto-fix transitions status, sets fields, and posts audit comments with
-  per-ticket user approval. Trigger phrases include: "check hygiene", "hygiene check",
-  "jira hygiene", "check ticket hygiene", "sprint hygiene", "hygiene audit",
-  "run hygiene", "hygiene report".
+  Check Jira tickets against team hygiene rules. User-scoped by default (your
+  tickets only); use --team for full component scope. Supports single ticket,
+  sprint, JQL, or all-open checks. Reports violations with rule IDs and fixes.
+  Opt-in auto-fix with per-ticket approval. Auto-fetches code freeze dates from
+  Product Pages when available. Trigger phrases include: "check hygiene",
+  "hygiene check", "jira hygiene", "sprint hygiene", "hygiene audit",
+  "run hygiene", "hygiene report", "my ticket hygiene".
 allowed-tools: Bash Read Write Grep Glob Agent AskUserQuestion
 ---
 
 # Jira Hygiene Check
 
-Validate Jira tickets against team hygiene rules. Reports violations with rule IDs, severity, and fixes. Optionally auto-fixes with per-ticket approval.
+Validate Jira tickets against team hygiene rules. **User-scoped by default** — checks only your tickets. Use `--team` for full component scope.
 
 **Usage:**
-- `/jira-hygiene-check AIPCC-1234` — single ticket
-- `/jira-hygiene-check --sprint` — active sprint
-- `/jira-hygiene-check --jql "project = AIPCC AND status = 'In Progress'"` — custom JQL
-- `/jira-hygiene-check --open` — all unresolved tickets
-- `/jira-hygiene-check` — prompted to pick scope
+- `/jira-hygiene-check` — your tickets in active sprint (default)
+- `/jira-hygiene-check --team` — all team tickets in active sprint
+- `/jira-hygiene-check --sprint` — your sprint tickets (same as no-arg default)
+- `/jira-hygiene-check --open` — your unresolved tickets
+- `/jira-hygiene-check --open --team` — all team unresolved tickets
+- `/jira-hygiene-check RHOAIENG-1234` — single ticket (ignores scoping)
+- `/jira-hygiene-check --jql "..."` — custom JQL (ignores scoping)
 
 **Rules reference:** [Team Jira Hygiene Rules](https://redhat.atlassian.net/wiki/spaces/RHODS/pages/431230832/Team+Jira+Hygiene+Rules)
 
@@ -27,7 +30,7 @@ Validate Jira tickets against team hygiene rules. Reports violations with rule I
 
 ## Workflow
 
-### Step 0: Load Configuration
+### Step 0: Load Configuration and Identify User
 
 Read `config.env` from the current working directory.
 
@@ -40,48 +43,72 @@ Parse config into variables. Load resource files relative to this skill:
 - `resources/appendix-a-matrix.json` — required fields matrix
 - `resources/appendix-b-versions.json` — fixVersion naming patterns
 
-Verify MCP connectivity with a read-only JQL query:
+**Identify the current user:**
+Call `atlassianUserInfo` (no parameters) to get the authenticated user's display name and account ID. Store both — the display name is shown in the report header, the account ID is used as a fallback if `currentUser()` JQL fails.
+
+**Verify MCP connectivity:**
 `searchJiraIssuesUsingJql` with JQL `project = <JIRA_PROJECT_KEY> ORDER BY updated DESC`, `maxResults: 1`, `cloudId: <JIRA_CLOUD_ID>`.
 
 If MCP fails, stop and point user to `resources/mcp-setup.md`.
 
+**Refresh code freeze dates from Product Pages (best-effort):**
+
+Try to auto-fetch freeze dates from Product Pages MCP. This is a best-effort enhancement — if Product Pages is unavailable, fall back to config.env.
+
+1. Probe: Call `search_entities` with `q: "<FREEZE_PRODUCT from config or 'Red Hat AI'>"` to test if Product Pages MCP is available.
+2. If available:
+   - Call `search_entities` with `q: "Red Hat AI"` or the configured `FREEZE_PRODUCT` to find the product entity
+   - Call `get_entity_hierarchy` with `entity_id: <product_id>`, `role: "children"`, `kind: "release"` to get release IDs
+   - Call `browse_schedule` for each active release with `q: "freeze"` to get code freeze dates
+   - Filter for tasks with `flags` containing `"code"` and `"freeze"`, and `date_finish` in the future
+   - Extract the RHOAI code freeze dates (look for task names containing "RHOAI Code Freeze")
+   - Use these dates in-memory for CF rules (do NOT rewrite config.env during a check run)
+   - Log: "Freeze dates refreshed from Product Pages"
+3. If Product Pages MCP is NOT available:
+   - Check `FREEZE_DATES` in config.env
+   - If present, use those cached values. Log: "Freeze dates: using cached values from config.env"
+   - If empty, log: "No freeze dates available. Install the Product Pages MCP for auto-fetch, or run `/jira-hygiene-setup` to add dates manually. CF rules will be skipped."
+   - To install Product Pages MCP, tell user: "Product Pages MCP provides automatic code freeze dates. If available in your Claude Code environment, it will be auto-detected. Contact your admin if you need access."
+
 ### Step 1: Determine Scope
 
-Parse the user's input to determine check mode:
+Parse the user's input to determine check mode. **Default is user-scoped** (current user's tickets only). The `--team` flag overrides to full component scope.
+
+**Scoping logic:**
+- `--team` flag present: scope by project + component (no assignee filter)
+- `--team` flag absent: scope by `assignee = currentUser()` AND project + component
 
 **If argument is a ticket key** (matches `[A-Z]+-\d+` pattern):
 - Mode: single ticket
 - JQL: `key = <KEY>`
+- Scoping: ignored (always checks the specific ticket)
 
-**If argument is `--sprint`:**
-- Mode: active sprint
-- JQL: `project = <JIRA_PROJECT_KEY> AND sprint in openSprints()`
+**If argument is `--sprint` or no arguments (default):**
+- Mode: active sprint, user-scoped
+- JQL: `project = <JIRA_PROJECT_KEY> AND sprint in openSprints() AND assignee = currentUser()`
 - If `TEAM_COMPONENT` is set, append: `AND component = "<TEAM_COMPONENT>"`
 - Order: `ORDER BY status ASC, priority DESC`
+- If `--team` is also present: drop `AND assignee = currentUser()`
 
 **If argument is `--jql "<query>"`:**
 - Mode: custom JQL
 - JQL: user-provided query verbatim
+- Scoping: ignored (user controls the query)
 
 **If argument is `--open`:**
-- Mode: all unresolved
-- JQL: `project = <JIRA_PROJECT_KEY> AND resolution = Unresolved`
+- Mode: all unresolved, user-scoped
+- JQL: `project = <JIRA_PROJECT_KEY> AND resolution = Unresolved AND assignee = currentUser()`
 - If `TEAM_COMPONENT` is set, append: `AND component = "<TEAM_COMPONENT>"`
 - Order: `ORDER BY status ASC, updated DESC`
+- If `--team` is also present: drop `AND assignee = currentUser()`
 
-**If no arguments:**
-Present a checkpoint:
+**If no arguments and no flags:**
+Default to user-scoped sprint check. Show who is being checked:
 
-**Check scope:**
+> "Running hygiene check for **<display name>** — active sprint tickets.
+> Use `--team` to check all <TEAM_COMPONENT> tickets instead."
 
-- **Option 1:** Active sprint — tickets in the current sprint
-- **Option 2:** All open — all unresolved tickets for the project/component
-- **Option 3:** Custom JQL — provide your own query
-- **Option 4:** Cancel
-
-Reply with the option number.
-
-If Option 3, ask for the JQL query.
+Then proceed with the `--sprint` JQL (user-scoped).
 
 ### Step 2: Fetch Tickets
 
@@ -108,6 +135,20 @@ For changelog-dependent rules (WF-7), fetch each ticket individually with `expan
 - `fields`: `["*all"]`
 
 Only do this for tickets that are candidates (status not "New" — skipping tickets that haven't moved yet).
+
+### Step 2b: Sprint Membership Vetting
+
+For tickets with status "In Progress", verify they actually belong in the current sprint:
+
+1. Check the `sprint` or `customfield_10020` field on each In Progress ticket
+2. If a ticket is "In Progress" but NOT in any open sprint:
+   - Flag as a **SPRINT-VET** finding: "Ticket is In Progress but not in any active sprint — may be abandoned work"
+   - This is informational, not a rule violation — displayed in a separate "Sprint Vetting" section of the report
+3. If a ticket is in an open sprint but has been In Progress since a PREVIOUS sprint (sprint start date < current sprint start):
+   - Flag as **SPRINT-CARRY**: "Ticket carried over from a previous sprint — still In Progress"
+   - Check the sprint history in `customfield_10020` (array of sprint objects) to identify carryover
+
+This vetting helps surface zombie tickets that are technically "In Progress" but forgotten.
 
 ### Step 3: Check Exemptions
 
@@ -145,7 +186,7 @@ Apply the rule checks directly using the logic described below. This avoids file
 | GEN-1 | `fields.assignee` is null | Ticket is in active sprint (sprint field non-null) |
 | GEN-2 | `fields.description` is null, empty, or < 20 characters | Always |
 | GEN-3 | `fields.components` is empty | Always |
-| GEN-4 | `fields.priority` is null or name is "Normal" | Always |
+| GEN-4 | `fields.priority` is null or name is "Normal" or "Undefined" | Always |
 | GEN-5 | `fields.versions` empty OR severity custom field null | Issue type is Bug |
 | GEN-6 | `fields.updated` is > STALENESS_DAYS ago | Status is "In Progress" |
 | GEN-7 | `hygiene-bot-ignore` in labels | Already checked in Step 3 |
@@ -199,13 +240,13 @@ These are expensive checks. Only run for tickets where fixVersions is non-empty 
 
 #### Phase E — Code Freeze (CF-1 through CF-5)
 
-Only run if `FREEZE_DATES` is configured in config.env.
+Only run if freeze dates are available (from Product Pages refresh in Step 0, or from `FREEZE_DATES` in config.env).
 
 Parse freeze dates: `version:YYYY-MM-DD` pairs.
 
 | Rule | Check |
 |------|-------|
-| CF-1 | Informational — freeze dates configured? Log to report |
+| CF-1 | Informational — freeze dates source (Product Pages / config.env / none). Log to report |
 | CF-2 | Ticket has a fixVersion matching a frozen version AND current date is past freeze AND status ≠ "Closed" |
 | CF-3 | Compile all tickets past freeze that are unresolved — batch into digest section |
 | CF-4 | Current date is within 3 days before a freeze — flag tickets targeting that version that are not "Closed" |
@@ -240,7 +281,7 @@ For each ticket being checked, gather PR data using a layered approach:
 Use `getTeamworkGraphContext`:
 - `cloudId`: from config
 - `objectType`: `"JiraWorkItem"`
-- `objectIdentifier`: ticket key (e.g., `AIPCC-1234`)
+- `objectIdentifier`: ticket key (e.g., `RHOAIENG-1234`)
 - `targetObjectTypes`: `["ExternalPullRequest"]`
 
 This returns PR links from the Jira development panel. Extract PR URLs, states, and basic metadata.
@@ -281,7 +322,7 @@ Collect all violations from Step 4 into a per-ticket structure:
 
 ```json
 {
-    "key": "AIPCC-1234",
+    "key": "RHOAIENG-1234",
     "summary": "Fix bias metric calculation",
     "status": "In Progress",
     "assignee": "user@example.com",
@@ -293,7 +334,7 @@ Collect all violations from Step 4 into a per-ticket structure:
             "category": "General",
             "severity": "high",
             "title": "Active sprint tickets must have assignee",
-            "message": "Ticket AIPCC-1234 is in an active sprint but has no assignee",
+            "message": "Ticket RHOAIENG-1234 is in an active sprint but has no assignee",
             "auto_fixable": true,
             "fix_action": "set_assignee",
             "fix_description": "Set assignee on the ticket"
@@ -304,51 +345,52 @@ Collect all violations from Step 4 into a per-ticket structure:
 
 ### Step 7: Present Results
 
-**Always show the batch summary first:**
+**Always show the report header with user context:**
 
 ```
 ## Jira Hygiene Report
 
-**Scope:** Active Sprint (AIPCC, AI Safety)
+**User:** Shelton Cyril
+**Scope:** My tickets — Active Sprint (RHOAIENG, AI Safety)
 **Date:** 2026-07-08
-**Checked:** 23 | **Exempt:** 2 | **Clean:** 14 | **Violations:** 7
+**Freeze dates:** rhoai-3.5 freezes 2026-07-24 (16 days) — from Product Pages
+**Checked:** 8 | **Exempt:** 0 | **Clean:** 5 | **Violations:** 3
+```
 
+If `--team` was used, header shows:
+```
+**Scope:** Team — Active Sprint (RHOAIENG, AI Safety)
+```
+
+**Sprint vetting section (if any findings from Step 2b):**
+
+```
+### Sprint Vetting
+
+| Ticket | Status | Finding |
+|--------|--------|---------|
+| RHOAIENG-5678 | In Progress | Not in any active sprint — may be abandoned |
+| RHOAIENG-9012 | In Progress | Carried over from previous sprint |
+```
+
+**Then violations by category and per-ticket detail (same format as before):**
+
+```
 ### Violations by Category
 
 | Category | Count | Most Common Rule |
 |----------|-------|-----------------|
 | General | 6 | GEN-1 (3x) |
-| Workflow | 3 | WF-2 (2x) |
-| fixVersion | 3 | FV-1 (2x) |
-| Resolution | 1 | RES-2 (1x) |
-
-### Per-Ticket Detail
-
-| Ticket | Type | Status | Assignee | Violations | Rules |
-|--------|------|--------|----------|------------|-------|
-| [AIPCC-1234](https://redhat.atlassian.net/browse/AIPCC-1234) | Bug | In Progress | unassigned | 3 | GEN-1, GEN-4, FV-1 |
-| ... |
+| ...
 ```
 
-**Then show detailed violations per ticket:**
-
-For each ticket with violations, show the violation table:
-
-```
-#### AIPCC-1234 — Fix bias metric calculation
-
-| # | Rule | Severity | Violation | Auto-fix | Fix |
-|---|------|----------|-----------|----------|-----|
-| 1 | GEN-1 | high | No assignee in sprint | Yes | Set assignee |
-| 2 | GEN-4 | medium | Default priority | Yes | Set priority |
-| 3 | FV-1 | high | No fixVersion, PR merged | Yes | Add fixVersion |
-```
+**Per-ticket detail and fix checkpoints (unchanged from original).**
 
 **If ENFORCEMENT_MODE is `report-and-fix`:**
 
 After showing each ticket's violations, present a per-ticket fix checkpoint:
 
-**Fix violations for AIPCC-1234?**
+**Fix violations for RHOAIENG-1234?**
 
 - **Option 1:** Fix all auto-fixable (3 violations)
 - **Option 2:** Fix selected — enter violation numbers (e.g., "1, 3")
@@ -369,7 +411,7 @@ Show results without fix checkpoints. After all tickets displayed, offer:
 
 | Ticket | Summary |
 |--------|---------|
-| [AIPCC-5678](https://redhat.atlassian.net/browse/AIPCC-5678) | Legacy auth migration |
+| [RHOAIENG-5678](https://redhat.atlassian.net/browse/RHOAIENG-5678) | Legacy auth migration |
 ```
 
 ### Step 8: Apply Fixes (if approved)
@@ -423,10 +465,13 @@ Or write directly:
 - `~/jira-hygiene-reports/<project>-<date>-<scope>.md` — markdown report
 
 Report includes:
+- User name and scope (my tickets vs team)
 - Summary statistics
+- Sprint vetting findings
 - All violations with rule IDs
 - Fix actions taken (if any)
 - Exempt tickets
+- Freeze date source and upcoming freezes
 - Timestamp and scope
 
 ---
@@ -456,6 +501,9 @@ If custom field IDs don't match, update `appendix-a-matrix.json` field_mappings.
 - **Custom field ID mismatch:** If a custom field returns null but the ticket clearly has the value in the UI, warn the user to check custom field IDs and update `appendix-a-matrix.json`.
 - **Transition not available:** If `getTransitionsForJiraIssue` shows the target status is not a valid transition from current status, report "cannot auto-fix — transition not available" and skip.
 - **Large sprint (>100 tickets):** Confirm with user before proceeding. Process in batches of 50.
+- **Product Pages MCP unavailable:** Fall back to config.env FREEZE_DATES. If also empty, skip CF rules and inform user.
+- **currentUser() fails:** Fall back to account ID from `atlassianUserInfo` call. If that also fails, ask user for their Jira display name and use `assignee = "<name>"`.
+- **User has no sprint tickets:** Report "No tickets found for <name> in the active sprint" and suggest `--team` or `--open`.
 
 ## Do Not
 
@@ -468,3 +516,4 @@ If custom field IDs don't match, update `appendix-a-matrix.json` field_mappings.
 - Do not ignore the `hygiene-bot-ignore` exemption
 - Do not treat convention rules (👤) as errors — report them as informational/low severity
 - Do not fabricate PR data — if PR tools are unavailable, report rules as "unable to verify"
+- Do not rewrite config.env during a check run — freeze date refresh is in-memory only

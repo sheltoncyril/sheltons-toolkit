@@ -46,15 +46,23 @@ Validates Jira tickets against [Team Jira Hygiene Rules](https://redhat.atlassia
 | Code Freeze (CF) | 5 | Freeze compliance, pre-freeze warnings |
 | Resolution (RES) | 4 | Closure checklist, resolution value, QA sign-off |
 
+**User-scoped by default** — checks only your tickets. Use `--team` for full component scope.
+
 **Scope options:**
-- Single ticket: `/sheltons-toolkit:jira-hygiene-check AIPCC-1234`
-- Active sprint: `/sheltons-toolkit:jira-hygiene-check --sprint`
+- Your sprint tickets (default): `/sheltons-toolkit:jira-hygiene-check`
+- Team sprint tickets: `/sheltons-toolkit:jira-hygiene-check --team`
+- Single ticket: `/sheltons-toolkit:jira-hygiene-check RHOAIENG-1234`
+- Your open tickets: `/sheltons-toolkit:jira-hygiene-check --open`
+- Team open tickets: `/sheltons-toolkit:jira-hygiene-check --open --team`
 - Custom JQL: `/sheltons-toolkit:jira-hygiene-check --jql "..."`
-- All open: `/sheltons-toolkit:jira-hygiene-check --open`
 
 **Auto-fix:** 8 rules support auto-fix (set assignee, transition status, add fixVersion, etc.) with per-ticket user approval. Configure via `/sheltons-toolkit:jira-hygiene-setup`.
 
-**Prerequisites:** Atlassian MCP plugin. Optional: `gh` CLI for GitHub PR correlation, `glab` for GitLab.
+**Code freeze dates:** Auto-fetched from Product Pages MCP when available. Falls back to manual dates in config.env.
+
+**Sprint vetting:** Flags In Progress tickets not in any sprint and tickets carried over from previous sprints.
+
+**Prerequisites:** Atlassian MCP plugin. Optional: `gh` CLI for GitHub PR correlation, `glab` for GitLab, Product Pages MCP for auto freeze dates.
 
 ## Usage
 
@@ -65,8 +73,11 @@ Validates Jira tickets against [Team Jira Hygiene Rules](https://redhat.atlassia
 # Jira hygiene — first time setup
 /sheltons-toolkit:jira-hygiene-setup
 
-# Jira hygiene — check active sprint
-/sheltons-toolkit:jira-hygiene-check --sprint
+# Jira hygiene — check my sprint tickets (default)
+/sheltons-toolkit:jira-hygiene-check
+
+# Jira hygiene — check all team sprint tickets
+/sheltons-toolkit:jira-hygiene-check --team
 ```
 
 ## Contributing

@@ -3,7 +3,8 @@ name: setup
 description: >
   Configure Jira Hygiene Checker with project key, team component, code repos,
   workflow statuses, and enforcement preferences. Creates config.env that the
-  check skill reads at startup. Run once per environment; re-run to update.
+  check skill reads at startup. Auto-fetches code freeze dates from Product Pages
+  when available. Run once per environment; re-run to update.
   Trigger phrases include: "setup hygiene", "configure hygiene checker",
   "jira hygiene setup", "initialize hygiene", "reconfigure hygiene".
 allowed-tools: Bash Read Write AskUserQuestion
@@ -42,6 +43,14 @@ Run these detection commands silently and store results as suggestions:
 Try a read-only MCP call: `searchJiraIssuesUsingJql` with JQL `project = AIPCC ORDER BY updated DESC`, `maxResults: 1`, `cloudId: redhat.atlassian.net`.
 
 If the call succeeds, MCP is available. If it fails, warn the user and point them to `skills/check/resources/mcp-setup.md`.
+
+**Detect current user:**
+Call `atlassianUserInfo` (no parameters) to get the authenticated user's display name. Show it: "Authenticated as: **<display name>**"
+
+**Detect Product Pages MCP availability:**
+Try calling `search_entities` with `q: "Red Hat AI"`. If the tool exists and returns results, Product Pages MCP is available. Store the product entity ID for Step 8.
+
+If not available, note it for later — Step 8 will fall back to manual entry.
 
 **Detect GitHub CLI:**
 ```bash
@@ -169,14 +178,62 @@ Reply with the option number.
 >
 > This is used by the refresh-rules command. Press Enter to accept the default."
 
-### Step 8: Code Freeze Dates (optional)
+### Step 8: Code Freeze Dates
 
-> "Do you have any upcoming code freeze dates to configure?
+This step uses a three-tier approach: Product Pages auto-fetch, manual entry, or skip.
+
+**8a: Try Product Pages MCP (if detected in Step 2)**
+
+If Product Pages MCP is available:
+
+1. Ask: "What is the Product Pages product name for your release schedule?"
+   - Default: `Red Hat AI` (detected in Step 2)
+   - Store as `FREEZE_PRODUCT`
+
+2. Fetch releases:
+   - Call `search_entities` with `q: "<FREEZE_PRODUCT>"` to find the product entity
+   - Call `get_entity_hierarchy` with `entity_id: <product_id>`, `role: "children"`, `kind: "release"` to get active releases
+
+3. Fetch freeze dates for each release:
+   - Call `browse_schedule` with `entity_id: <release_id>`, `q: "freeze"` for each release
+   - Filter for tasks with flags containing `"code"` and `"freeze"`, and `date_finish` in the future
+   - Extract RHOAI code freeze dates (task names containing "RHOAI Code Freeze")
+
+4. Present for confirmation:
+   > "Found these upcoming code freeze dates from Product Pages:
+   >
+   > | Version | Freeze Date | Days Until |
+   > |---------|-------------|------------|
+   > | rhoai-3.5 | 2026-07-24 | 16 |
+   > | rhoai-3.6.EA1 | 2026-08-21 | 44 |
+   > | ...
+   >
+   > Accept these dates, or enter your own?"
+
+5. User can accept (store with `FREEZE_SOURCE=productpages`) or override with manual dates.
+
+**8b: If Product Pages MCP is NOT available**
+
+Inform the user:
+
+> "Product Pages MCP is not available in this session. It provides automatic code freeze date fetching from Red Hat's release schedule system.
 >
-> Enter as comma-separated `version:date` pairs.
+> Product Pages is a server-side MCP plugin — if it's available in your Claude Code environment, it will be auto-detected. It requires browser-based OAuth authentication the first time. Contact your admin if you need access.
+>
+> You can enter freeze dates manually instead, or skip to disable code freeze rules."
+
+Then proceed with manual entry:
+
+> "Enter code freeze dates as comma-separated `version:date` pairs.
 > Example: `rhoai-3.5:2026-07-15, rhoai-3.4.2:2026-07-20`
 >
-> Type 'skip' if you don't have freeze dates or manage them elsewhere."
+> Type 'skip' to disable code freeze rules."
+
+If manual dates provided, store with `FREEZE_SOURCE=manual`.
+
+**8c: Skip**
+
+If user types 'skip', leave `FREEZE_DATES=` empty. Code freeze rules (CF-1 through CF-5) will be skipped during checks.
 
 ### Step 9: Write Configuration
 
@@ -208,6 +265,8 @@ AUTO_FIX_RULES=<comma-separated rule IDs>
 
 # === Code Freeze ===
 FREEZE_DATES=<comma-separated version:date pairs>
+FREEZE_SOURCE=<productpages or manual or empty>
+FREEZE_PRODUCT=<Product Pages product name or empty>
 ```
 
 For any value the user skipped, leave the right side empty (e.g., `TEAM_COMPONENT=`).
@@ -221,21 +280,26 @@ Present the final configuration:
 >
 > | Category | Setting | Value | Status |
 > |----------|---------|-------|--------|
-> | Project | Key | `AIPCC` | Verified (JQL works) |
+> | User | Identity | `Shelton Cyril` | Verified |
+> | Project | Key | `RHOAIENG` | Verified (JQL works) |
 > | Project | Cloud ID | `redhat.atlassian.net` | Set |
 > | Project | Component | `AI Safety` | Verified / Not configured |
 > | Workflow | Statuses | `New → ... → Closed` | Set |
 > | Workflow | Staleness | `14 days` | Set |
-> | PR Check | GitHub repos | `2 repos` | Set / Not configured |
+> | PR Check | GitHub repos | `7 repos` | Set / Not configured |
 > | PR Check | GitLab repos | `0 repos` | Not configured |
 > | Enforcement | Mode | `report-and-fix` | Set |
 > | Enforcement | Auto-fix rules | `GEN-1, GEN-3, ...` | Set / None |
-> | Freeze | Dates | `1 configured` | Set / Not configured |
+> | Freeze | Source | `Product Pages` | Auto-fetched / Manual / Not configured |
+> | Freeze | Dates | `4 configured` | Set / Not configured |
+> | Freeze | Next freeze | `rhoai-3.5: 2026-07-24 (16 days)` | — |
 > | MCP | Atlassian | Connected | Verified / Not available |
+> | MCP | Product Pages | Connected | Available / Not available |
 > | Tools | gh CLI | Available | Verified / Not found |
 > | Tools | glab CLI | Not found | — |
 >
-> Run `/jira-hygiene-check` to check your tickets."
+> Run `/jira-hygiene-check` to check your tickets (user-scoped by default).
+> Run `/jira-hygiene-check --team` to check all team tickets."
 
 ---
 
@@ -246,6 +310,9 @@ Present the final configuration:
 - **gh/glab not found:** Set `PR_CHECK_ENABLED=false`. PR-dependent rules (WF-1 through WF-5, PR-1 through PR-4) will use Teamwork Graph API only.
 - **User wants to change one setting:** Read existing config.env, present it, ask which value(s) to update, rewrite with only those changed.
 - **No freeze dates:** Leave `FREEZE_DATES=` empty. Code freeze rules (CF-1 through CF-5) will be skipped during checks.
+- **Product Pages MCP available but authentication required:** The MCP handles its own OAuth flow. If the tool call fails with an auth error, inform the user that Product Pages requires browser authentication and they may need to re-authenticate.
+- **Product Pages returns no releases:** The product name may be wrong. Ask user to confirm or provide the correct product name.
+- **Product Pages returns past freeze dates only:** Filter to future dates. If none remain, inform user and offer manual entry.
 
 ## Do Not
 
@@ -253,3 +320,4 @@ Present the final configuration:
 - Do not commit config.env to git (it may contain team-specific settings)
 - Do not run hygiene checks during setup — that is the check skill's job
 - Do not modify any Jira tickets during setup
+- Do not install Product Pages MCP — it is server-side and either available or not

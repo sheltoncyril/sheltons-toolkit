@@ -88,3 +88,24 @@ glab auth status
 ```
 
 These are optional. Without them, PR checks use only the Teamwork Graph API (Jira dev panel links).
+
+---
+
+## Optional: Product Pages MCP
+
+For automatic code freeze date fetching (CF-1 through CF-5):
+
+Product Pages MCP is a **server-side plugin** — not a locally-installed MCP server. It is either available in your Claude Code environment or it is not. No `pip install` or token configuration needed.
+
+**Detection:** The setup and check skills automatically probe for Product Pages by calling `search_entities`. If available, freeze dates are auto-fetched from Red Hat's release schedule system.
+
+**Authentication:** Product Pages uses browser-based OAuth. The first time it's used in a session, you may be prompted to authenticate via your browser. After that, it works automatically.
+
+**If not available:** Freeze dates can be entered manually during `/jira-hygiene-setup`, or the CF rules will be skipped. Contact your admin if you need Product Pages access.
+
+| Tool | Purpose |
+|------|---------|
+| `search_entities` | Find product/release entities by name |
+| `get_entity_hierarchy` | Navigate product → release tree |
+| `browse_schedule` | Get schedule tasks (freeze dates) for a release |
+| `list_schedule_milestones` | List milestone types (GA, Code Freeze, etc.) |
