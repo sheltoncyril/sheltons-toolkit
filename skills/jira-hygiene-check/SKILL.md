@@ -1,5 +1,5 @@
 ---
-name: check
+name: jira-hygiene-check
 description: >
   Check Jira tickets against team hygiene rules. User-scoped by default (your
   tickets only); use --team for full component scope. Reports violations with

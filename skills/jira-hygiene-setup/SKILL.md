@@ -1,5 +1,5 @@
 ---
-name: setup
+name: jira-hygiene-setup
 description: >
   Configure Jira Hygiene Checker with project key, team component, code repos,
   workflow statuses, and enforcement preferences. Creates config.env that the
