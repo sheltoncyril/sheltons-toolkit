@@ -28,6 +28,35 @@ Validate Jira tickets against team hygiene rules. **User-scoped by default** —
 
 ---
 
+## Mandatory Execution Checklist
+
+**YOU MUST complete every step in order. Do not skip any step. Check off each step as you complete it by reporting progress to the user.**
+
+Before presenting results, verify you have completed ALL of the following:
+
+- [ ] **Step 0** — Load config.env, identify user via `atlassianUserInfo`, verify MCP, refresh freeze dates
+- [ ] **Step 1** — Determine scope (user-scoped default or --team)
+- [ ] **Step 2** — Fetch all tickets via JQL (paginate if needed)
+- [ ] **Step 2b** — Sprint membership vetting (flag In Progress tickets not in sprint)
+- [ ] **Step 3** — Check exemptions (`hygiene-bot-ignore` label)
+- [ ] **Step 4** — Evaluate field-based rules (GEN-1 through GEN-7, FV-1, FV-6, FV-7, RES-1 through RES-4, WF-7)
+- [ ] **Step 5** — **PR CORRELATION (MANDATORY when PR_CHECK_ENABLED=true)** — for EVERY ticket in Review, In Progress, or Closed status, check linked PRs via Teamwork Graph AND `gh` CLI. Evaluate WF-1 through WF-5, PR-1 through PR-4. This step catches critical mismatches between ticket status and PR state — DO NOT SKIP IT.
+- [ ] **Step 6** — Compile all violations (field-based AND PR-based) into final report
+- [ ] **Step 7** — Present results with fix checkpoints
+- [ ] **Step 8** — Apply fixes if approved
+- [ ] **Step 9** — Save report
+
+**Why PR correlation matters (from real findings):**
+- Tickets in Review but PR is still Draft = status is ahead of reality
+- Tickets In Progress with zero PRs for weeks = zombie work
+- Branch names missing ticket keys = broken traceability
+- All PRs merged but ticket not Closed = missed transition
+- PR closed without merge = needs manual resolution
+
+Skipping Step 5 produces a report that misses the most actionable violations. Field checks alone (GEN/FV/RES) catch hygiene gaps but miss workflow-state mismatches that block releases.
+
+---
+
 ## Workflow
 
 ### Step 0: Load Configuration and Identify User
@@ -270,38 +299,65 @@ After all rule phases, run the required fields matrix check:
 - Skip `pr_link` (checked via PR rules)
 - Report any missing required fields as a `MATRIX` violation
 
-### Step 5: PR Correlation
+### Step 5: PR Correlation — MANDATORY
 
-Run only if `PR_CHECK_ENABLED=true` in config.
+**THIS STEP IS NOT OPTIONAL.** When `PR_CHECK_ENABLED=true` in config, you MUST run PR correlation for every ticket in Review, In Progress, or Closed status before presenting results. Do not skip this step to save time. Do not present results without completing it. PR correlation catches the most actionable violations — without it the report is incomplete.
 
-For each ticket being checked, gather PR data using a layered approach:
+**Which tickets need PR checks:**
+- ALL tickets in **Review** status — verify PR state matches (draft? merged? changes requested?)
+- ALL tickets in **In Progress** status — verify PRs exist and are not already merged
+- ALL tickets in **Closed** status — verify PRs are merged, not just closed
+- Tickets in **New/Backlog** — skip (no PRs expected)
 
-**Layer 1 — Teamwork Graph (always available with MCP):**
+**What PR correlation catches (real examples):**
 
-Use `getTeamworkGraphContext`:
+| Pattern | Rules | Why it matters |
+|---------|-------|----------------|
+| Ticket in Review but PR is still Draft | WF-2 | Status is ahead of reality — misleads sprint progress |
+| Ticket In Progress for weeks with zero PRs | PR-2 | Zombie work — no code activity at all |
+| All PRs merged but ticket not Closed | WF-4 | Missed transition — blocks release metrics |
+| PR closed without merge | WF-5 | Needs manual resolution — work may be abandoned |
+| Branch name missing ticket key | PR-1 | Broken traceability — bot can't discover the PR |
+| 5+ tickets sharing one PR (umbrella) | PR-3 | One-ticket-per-change convention violated |
+| Backport PR missing cherry-pick reference | PR-4 | Downstream verification broken |
+
+**Execution — use ALL available layers:**
+
+**Layer 1 — Teamwork Graph (always run first):**
+
+Use `getTeamworkGraphContext` for each ticket:
 - `cloudId`: from config
 - `objectType`: `"JiraWorkItem"`
 - `objectIdentifier`: ticket key (e.g., `RHOAIENG-1234`)
 - `targetObjectTypes`: `["ExternalPullRequest"]`
 
-This returns PR links from the Jira development panel. Extract PR URLs, states, and basic metadata.
+This returns PR link count from the Jira development panel. If count > 0, proceed to Layer 2 for details. If count = 0 and ticket is In Progress or Review, flag as PR-2 (no PR links).
 
-**Layer 2 — GitHub CLI (if `gh` available and GITHUB_REPOS configured):**
+**Layer 2 — GitHub CLI (MUST run for every ticket with PRs or in Review/In Progress):**
 
-For richer PR data (branch names, review states, draft status, body), use the Python script:
-```bash
-python3 <skill-dir>/scripts/pr_correlator.py \
-    --ticket-key <KEY> \
-    --github-repos "<GITHUB_REPOS from config>" \
-    --gitlab-repos "<GITLAB_REPOS from config>" \
-    --output /tmp/<KEY>-prs.json
-```
-
-Or call `gh` directly:
+Search ALL configured repos for PRs matching the ticket key:
 ```bash
 gh pr list --repo <org/repo> --search "<KEY>" --state all \
     --json number,title,state,headRefName,mergedAt,isDraft,body,url,reviews --limit 20
 ```
+
+Run this for EACH repo in `GITHUB_REPOS`. Do not search just one repo and stop. A ticket may have PRs across multiple repos (e.g., operator + tests).
+
+For GitLab repos, use the pr_correlator.py script or `glab` directly.
+
+**From the PR data, evaluate these rules:**
+
+| Rule | Check | How |
+|------|-------|-----|
+| WF-1 | PR exists but status < In Progress | Compare ticket status position against "In Progress" in workflow order |
+| WF-2 | PR ready for review but ticket ≠ Review | `state=open AND isDraft=false AND no changes_requested review` but ticket status is not "Review" |
+| WF-3 | Changes requested but ticket ≠ In Progress | Any review has `state=CHANGES_REQUESTED` but ticket is not "In Progress" |
+| WF-4 | All PRs merged but ticket ≠ Closed | Every PR has `mergedAt != null` but ticket status is not "Closed" |
+| WF-5 | PR closed without merge | `state=closed AND mergedAt=null` — advisory notification |
+| PR-1 | Branch/title missing ticket key | `ticket_key.upper() not in headRefName.upper() AND ticket_key.upper() not in title.upper()` |
+| PR-2 | No PRs found but ticket is In Progress or Review | Teamwork Graph count = 0 AND `gh` search returns empty |
+| PR-3 | More than 5 PRs linked | Count of unique PRs > 5 |
+| PR-4 | Backport PR missing cherry-pick reference | Title/body contains "backport" or "cherry-pick" but body lacks "cherry picked from commit" |
 
 **Layer 3 — Branch containment (for FV-2/FV-3/FV-4):**
 
@@ -311,10 +367,11 @@ For each merged PR, check if the merge commit exists on each release branch:
 ```bash
 gh api repos/<owner>/<repo>/compare/<release-branch>...<merge-sha> --jq '.status'
 ```
+If status is "behind" or "identical", the commit is on that branch. If "ahead" or "diverged", it is not.
 
-**Caching:** Cache PR data per ticket key. If a ticket was already checked, reuse cached data.
+**Caching:** Cache PR data per ticket key. If a ticket was already checked across repos, reuse cached data.
 
-**Graceful fallback:** If `gh`/`glab` not available, use Teamwork Graph data only. PR-dependent rules that need branch/review state will report "unable to verify — PR tool not available" instead of false positives.
+**Graceful fallback:** If `gh`/`glab` not available AND Teamwork Graph returns no data, report each PR-dependent rule as "unable to verify — PR tool not available" instead of skipping silently. The user must see that PR rules were NOT checked.
 
 ### Step 6: Compile Violations
 
