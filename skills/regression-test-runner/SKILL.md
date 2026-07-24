@@ -206,7 +206,7 @@ Tests run inside sequential Jobs on the OpenShift cluster, one per tier. This me
 
 The tiers run in order: `smoke` → `tier1` → `tier2` → `tier3`. Each tier only runs if tests with that marker exist for the component. If `--markers` was explicitly provided, skip tier detection and run only the specified markers.
 
-**4a. Set up RBAC (idempotent):**
+**4a. Set up namespace, RBAC, and log storage (idempotent):**
 
 ```bash
 oc create namespace test-runner --dry-run=client -o yaml | oc apply -f -
@@ -218,6 +218,24 @@ oc create serviceaccount test-runner -n test-runner --dry-run=client -o yaml | o
 
 ```bash
 oc adm policy add-cluster-role-to-user cluster-admin -z test-runner -n test-runner
+```
+
+Create a PVC for persistent logs (survives pod deletion, timeouts, and Job cleanup):
+
+```bash
+cat <<'PVCEOF' | oc apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: regression-logs
+  namespace: test-runner
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+PVCEOF
 ```
 
 **4b. Detect which tiers have tests:**
@@ -317,7 +335,14 @@ spec:
               token: ${KUBE_TOKEN}
           KCEOF
 
-          uv run pytest <TEST_PATH> -v --tb=long --cluster-sanity-skip-rhoai-check -m "<TIER>"
+          LOG_DIR=/logs/<COMPONENT>
+          mkdir -p ${LOG_DIR}
+          
+          uv run pytest <TEST_PATH> -v --tb=long --cluster-sanity-skip-rhoai-check -m "<TIER>" 2>&1 | tee ${LOG_DIR}/<TIER>.log
+          
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "EXIT_CODE=${EXIT_CODE}" > ${LOG_DIR}/<TIER>.exitcode
+          exit ${EXIT_CODE}
         resources:
           requests:
             cpu: "500m"
@@ -328,9 +353,14 @@ spec:
         volumeMounts:
         - name: results
           mountPath: /home/odh/opendatahub-tests/results
+        - name: logs
+          mountPath: /logs
       volumes:
       - name: results
         emptyDir: {}
+      - name: logs
+        persistentVolumeClaim:
+          claimName: regression-logs
 JOBEOF
 ```
 
@@ -365,16 +395,24 @@ oc wait --for=condition=failed --timeout=5s job/regression-<COMPONENT>-<TIER> -n
 
 **4c-iv. Collect tier results:**
 
+Try pod logs first (fastest). If pod was cleaned up (deadline exceeded, OOM), fall back to the PVC.
+
 ```bash
 oc logs -n test-runner -l job-name=regression-<COMPONENT>-<TIER> --tail=100
 ```
 
-Parse the pytest summary line. Store results for this tier.
-
-If failures detected, also save full logs:
+If that returns empty or "not found", read from the PVC via a temporary debug pod:
 
 ```bash
-oc logs -n test-runner -l job-name=regression-<COMPONENT>-<TIER> > /tmp/regression-output-<COMPONENT>-<TIER>.log
+oc run log-reader --rm -i --restart=Never -n test-runner --image=busybox --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-reader","image":"busybox","command":["tail","-100","/logs/<COMPONENT>/<TIER>.log"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}' 2>&1
+```
+
+Parse the pytest summary line. Store results for this tier.
+
+Save full logs locally for failure analysis:
+
+```bash
+oc run log-reader --rm -i --restart=Never -n test-runner --image=busybox --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-reader","image":"busybox","command":["cat","/logs/<COMPONENT>/<TIER>.log"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}' > /tmp/regression-output-<COMPONENT>-<TIER>.log 2>&1
 ```
 
 Report tier progress:
@@ -402,6 +440,16 @@ All tiers complete:
 ```
 
 Collect all failures across tiers for Step 5 analysis. Save combined logs to `/tmp/regression-output-<COMPONENT>.log`.
+
+**4e. Log persistence note:**
+
+Logs on the PVC persist across runs. To clean up old logs after analysis:
+
+```bash
+oc run log-cleanup --rm -i --restart=Never -n test-runner --image=busybox --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-cleanup","image":"busybox","command":["rm","-rf","/logs/<COMPONENT>"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}'
+```
+
+Only clean up after results have been reported to Jira and analysis is complete.
 
 ### Step 5: Analyze Failures
 
@@ -654,6 +702,10 @@ These are hard-won lessons from real cluster testing sessions.
 **Test namespaces are created by fixtures.** The tests create their own namespaces (e.g., `test-lmeval-hf-tier1`, `test-nemo-guardrails`). If a Job fails mid-test, these namespaces may be left behind. Clean up with `oc delete namespace <name>` after failed runs.
 
 **LM Eval tests create LMEvalJob CRs** that spawn their own pods. These pods pull the image from `RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE` — that's why patching the operator env var is necessary, not just patching the test Job image.
+
+**Logs vanish when pods are cleaned up.** When `activeDeadlineSeconds` is exceeded, Kubernetes kills the pod and `oc logs` returns nothing. The PVC-based log persistence (`/logs/<component>/<tier>.log`) solves this — logs survive pod deletion, Job cleanup, and timeouts. Always use `tee` to write to both stdout and the PVC. Fall back to the PVC reader pod when `oc logs` returns empty.
+
+**LM Eval tier1 tests are very long-running.** Model downloads + inference can exceed 2 hours easily. Tier timeouts should be generous: 30m smoke, 2h tier1, 3h tier2, 5h tier3. If tier1 still times out, consider running with subset markers or increasing the timeout further.
 
 **Ruff pre-commit needs two runs.** First run auto-fixes, second run validates. The opendatahub-tests repo's pre-commit config also enforces FCN001 (keyword-only args in test functions).
 
