@@ -107,6 +107,23 @@ If no Konflux check found, report error and stop.
 
 If multiple Konflux checks exist, list them and ask the user which one to use.
 
+**Verify the Konflux build succeeded** by checking the check conclusion:
+
+```bash
+gh pr view <NUMBER> --repo <OWNER/REPO> --json statusCheckRollup --jq '.statusCheckRollup[] | select(.name != null) | select(.name | contains("Konflux")) | {name: .name, conclusion: .conclusion, status: .status}'
+```
+
+If conclusion is `FAILURE`, report error and stop: "Konflux build failed. No image to test."
+If conclusion is empty and status is not `COMPLETED`, warn: "Konflux build still running. Image may not exist yet."
+
+**Verify the image exists on quay.io:**
+
+```bash
+oc image info <constructed-image-uri> --filter-by-os=linux/amd64 2>&1 | head -5
+```
+
+If the image does not exist (output contains "manifest unknown" or "not found"), report error and stop: "Image not found on quay.io. Konflux build may not have pushed the image yet."
+
 **Auto-detect test component** (if not already specified):
 
 Read `<skill-dir>/resources/component-test-map.json`. For each entry, check if any of its `image_patterns` is a substring of the Konflux component name. The first match determines which test suite to run.

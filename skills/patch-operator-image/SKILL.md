@@ -110,6 +110,26 @@ oc get deployment trustyai-service-operator-controller-manager -n redhat-ods-app
 
 If either fails, report the error and stop.
 
+### Step 1.5: Verify Image Exists
+
+Before patching, verify the image is actually available on the registry:
+
+```bash
+oc image info <IMAGE_URI> --filter-by-os=linux/amd64 2>&1 | head -5
+```
+
+If the output contains "manifest unknown", "unauthorized", or "not found", the image does not exist. Report:
+
+```
+ERROR: Image not found on registry.
+  Image: <IMAGE_URI>
+  
+This likely means the Konflux build has not completed or has failed.
+Check the build status before retrying.
+```
+
+Stop the workflow. Do not patch with a nonexistent image.
+
 ### Step 2: Match Image Pattern
 
 Read `<skill-dir>/resources/image-mapping.json`.
