@@ -1,0 +1,51 @@
+{
+  "nemo_guardrails": {
+    "display_name": "NeMo Guardrails",
+    "test_path": "tests/ai_safety/nemo_guardrails/",
+    "default_markers": "ai_safety",
+    "jira_component": "AI Safety",
+    "image_patterns": ["nemo-guardrails-server"]
+  },
+  "trustyai_service": {
+    "display_name": "TrustyAI Service",
+    "test_path": "tests/ai_safety/trustyai_service/",
+    "default_markers": "ai_safety",
+    "jira_component": "AI Safety",
+    "image_patterns": ["trustyai-service"]
+  },
+  "trustyai_operator": {
+    "display_name": "TrustyAI Operator",
+    "test_path": "tests/ai_safety/trustyai_operator/",
+    "default_markers": "ai_safety",
+    "jira_component": "AI Safety",
+    "image_patterns": ["trustyai-service-operator"]
+  },
+  "lm_eval": {
+    "display_name": "LM Eval",
+    "test_path": "tests/ai_safety/lm_eval/",
+    "default_markers": "ai_safety",
+    "jira_component": "AI Safety",
+    "image_patterns": ["lmes-job", "lmes-driver"]
+  },
+  "guardrails": {
+    "display_name": "Guardrails Orchestrator",
+    "test_path": "tests/ai_safety/guardrails/",
+    "default_markers": "ai_safety",
+    "jira_component": "AI Safety",
+    "image_patterns": ["guardrails-orchestrator", "built-in-detector", "vllm-orchestrator-gateway"]
+  },
+  "evalhub": {
+    "display_name": "EvalHub",
+    "test_path": "tests/ai_safety/evalhub/",
+    "default_markers": "ai_safety",
+    "jira_component": "AI Safety",
+    "image_patterns": ["eval-hub", "garak"]
+  },
+  "component_health": {
+    "display_name": "Component Health",
+    "test_path": "tests/ai_safety/component_health/",
+    "default_markers": "ai_safety",
+    "jira_component": "AI Safety",
+    "image_patterns": []
+  }
+}

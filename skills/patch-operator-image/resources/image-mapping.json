@@ -1,0 +1,69 @@
+[
+  {
+    "pattern": "trustyai-service-operator",
+    "env_var": "__CONTAINER_IMAGE__",
+    "configmap_key": "trustyaiOperatorImage",
+    "description": "TrustyAI Service Operator",
+    "is_container_image": true
+  },
+  {
+    "pattern": "nemo-guardrails-server",
+    "env_var": "RELATED_IMAGE_ODH_TRUSTYAI_NEMO_GUARDRAILS_SERVER_IMAGE",
+    "configmap_key": "nemo-guardrails-image",
+    "description": "NeMo Guardrails Server"
+  },
+  {
+    "pattern": "eval-hub",
+    "env_var": "RELATED_IMAGE_ODH_EVAL_HUB_IMAGE",
+    "configmap_key": "evalHubImage",
+    "description": "EvalHub"
+  },
+  {
+    "pattern": "kube-rbac-proxy",
+    "env_var": "RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE",
+    "configmap_key": "kube-rbac-proxy",
+    "description": "Kube RBAC Proxy"
+  },
+  {
+    "pattern": "lmes-job",
+    "env_var": "RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE",
+    "configmap_key": "lmes-pod-image",
+    "description": "LMES Job"
+  },
+  {
+    "pattern": "lmes-driver",
+    "env_var": "RELATED_IMAGE_ODH_TA_LMES_DRIVER_IMAGE",
+    "configmap_key": "lmes-driver-image",
+    "description": "LMES Driver"
+  },
+  {
+    "pattern": "guardrails-orchestrator",
+    "env_var": "RELATED_IMAGE_ODH_FMS_GUARDRAILS_ORCHESTRATOR_IMAGE",
+    "configmap_key": "guardrails-orchestrator-image",
+    "description": "Guardrails Orchestrator"
+  },
+  {
+    "pattern": "built-in-detector",
+    "env_var": "RELATED_IMAGE_ODH_BUILT_IN_DETECTOR_IMAGE",
+    "configmap_key": "guardrails-built-in-detector-image",
+    "description": "Built-in Detector"
+  },
+  {
+    "pattern": "vllm-orchestrator-gateway",
+    "env_var": "RELATED_IMAGE_ODH_TRUSTYAI_VLLM_ORCHESTRATOR_GATEWAY_IMAGE",
+    "configmap_key": "guardrails-sidecar-gateway-image",
+    "description": "vLLM Orchestrator Gateway"
+  },
+  {
+    "pattern": "garak",
+    "env_var": "RELATED_IMAGE_ODH_TRUSTYAI_GARAK_LLS_PROVIDER_DSP_IMAGE",
+    "configmap_key": "garak-provider-image",
+    "description": "Garak LLS Provider"
+  },
+  {
+    "pattern": "trustyai-service",
+    "env_var": "RELATED_IMAGE_ODH_TRUSTYAI_SERVICE_IMAGE",
+    "configmap_key": "trustyaiServiceImage",
+    "description": "TrustyAI Service"
+  }
+]
