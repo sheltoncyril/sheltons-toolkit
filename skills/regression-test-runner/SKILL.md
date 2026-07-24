@@ -22,13 +22,13 @@ Run component regression tests against a live cluster, analyze failures, fix tes
 `$ARGUMENTS` format:
 
 ```
-<component> [--jira <TICKET-KEY-OR-URL>] [--image <IMAGE-URI>] [--pr <GITHUB-PR-URL>] [--no-fix] [--markers <PYTEST-MARKERS>]
+[component] [--jira <TICKET-KEY-OR-URL>] [--image <IMAGE-URI>] [--pr <GITHUB-PR-URL>] [--no-fix] [--markers <PYTEST-MARKERS>] [--arch <ARCH>]
 ```
 
-- **component** (required) — component name from the test map (e.g., `nemo_guardrails`, `trustyai_service`, `lm_eval`)
+- **component** — component name from the test map (e.g., `nemo_guardrails`, `trustyai_service`, `lm_eval`). **Optional when `--pr` is provided** — the skill auto-detects the component from the Konflux build name.
 - **--jira** — existing Jira ticket key or URL. If omitted, the skill asks whether to create one
 - **--image** — candidate image URI to patch into the operator before testing
-- **--pr** — GitHub PR URL with a Konflux build. The skill auto-resolves the built image (see Step 2.5)
+- **--pr** — GitHub PR URL with a Konflux build. Auto-resolves the built image AND the component to test (see Step 2.5)
 - **--arch** — architecture for Konflux image resolution: `x86-64` (default), `aarch64`, `s390x`
 - **--no-fix** — skip automated fix creation for test bug failures
 - **--markers** — additional pytest markers to filter tests (e.g., `smoke`, `tier1`)
@@ -37,11 +37,17 @@ Run component regression tests against a live cluster, analyze failures, fix tes
 
 ### Step 0: Parse and Validate Input
 
-Parse `$ARGUMENTS` to extract the component name and optional flags.
+Parse `$ARGUMENTS` to extract the component name (if present) and optional flags.
 
-Read `<skill-dir>/resources/component-test-map.json`. Look up the component name. If not found, print valid component names and stop.
+Read `<skill-dir>/resources/component-test-map.json`.
 
-Store the matched component config for later use.
+If a component name was provided, look it up. If not found, print valid component names and stop.
+
+If NO component name was provided:
+- If `--pr` is set, defer component resolution to Step 2.5 (it will be auto-detected from the Konflux build name)
+- If `--pr` is NOT set, print valid component names and stop with: "Component required when --pr is not provided"
+
+Store the matched component config for later use (may be set in Step 2.5).
 
 ### Step 1: Preflight Checks
 
@@ -94,22 +100,37 @@ gh pr view <NUMBER> --repo <OWNER/REPO> --json headRefOid,statusCheckRollup --jq
 From the result:
 1. Get the head commit SHA
 2. Get the Konflux check name (e.g., `Konflux Production Internal / odh-ta-lmes-job-on-pull-request-57892`)
-3. Extract the component name: take the part after ` / `, then regex-match `(.+)-on-pull-request-\d+` — capture group 1 is the component (e.g., `odh-ta-lmes-job`)
-4. Construct the image URI: `quay.io/rhoai/pull-request-pipelines:<component>-<full-sha>-linux-<ARCH>` (use `--arch` value, default `x86-64`)
+3. Extract the Konflux component name: take the part after ` / `, then regex-match `(.+)-on-pull-request-\d+` — capture group 1 is the Konflux component (e.g., `odh-ta-lmes-job`)
+4. Construct the image URI: `quay.io/rhoai/pull-request-pipelines:<konflux-component>-<full-sha>-linux-<ARCH>` (use `--arch` value, default `x86-64`)
 
 If no Konflux check found, report error and stop.
 
 If multiple Konflux checks exist, list them and ask the user which one to use.
 
-Report the resolved image:
+**Auto-detect test component** (if not already specified):
+
+Read `<skill-dir>/resources/component-test-map.json`. For each entry, check if any of its `image_patterns` is a substring of the Konflux component name. The first match determines which test suite to run.
+
+Mapping examples:
+- Konflux `odh-ta-lmes-job` contains pattern `lmes-job` → test component `lm_eval`
+- Konflux `odh-trustyai-nemo-guardrails-server` contains pattern `nemo-guardrails-server` → test component `nemo_guardrails`
+- Konflux `odh-trustyai-service-operator` contains pattern `trustyai-service-operator` → test component `trustyai_operator`
+
+If no match found and no component was provided in arguments, list the known components and ask the user which to run.
+
+If a component WAS provided in arguments, use that (explicit override).
+
+Report:
 ```
 Resolved from PR #<number>:
-  Component: <component>
-  SHA:       <sha>
-  Image:     quay.io/rhoai/pull-request-pipelines:<component>-<sha>-linux-x86-64
+  Konflux component: <konflux-component>
+  Test component:    <test-component> (<display_name>)
+  Test path:         <test_path>
+  SHA:               <sha>
+  Image:             quay.io/rhoai/pull-request-pipelines:<konflux-component>-<sha>-linux-<arch>
 ```
 
-Set the resolved image as the `--image` value and continue to Step 2.
+Set the resolved image as the `--image` value and the test component config, then continue to Step 2.
 
 ### Step 2: Patch Operator Image (conditional)
 
