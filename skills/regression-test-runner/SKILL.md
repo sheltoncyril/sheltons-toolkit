@@ -258,7 +258,7 @@ metadata:
     tier: <TIER>
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 1800
+  activeDeadlineSeconds: <TIER_TIMEOUT>
   template:
     spec:
       serviceAccountName: test-runner
@@ -320,7 +320,16 @@ spec:
 JOBEOF
 ```
 
-Replace `<COMPONENT>`, `<TIER>`, `<TEST_PATH>`, and `<EXTRA_ENV_VARS>` with actual values.
+Replace `<COMPONENT>`, `<TIER>`, `<TEST_PATH>`, `<EXTRA_ENV_VARS>`, and `<TIER_TIMEOUT>` with actual values.
+
+**Tier timeouts (activeDeadlineSeconds):**
+
+| Tier | Timeout | activeDeadlineSeconds |
+|------|---------|----------------------|
+| smoke | 30 min | 1800 |
+| tier1 | 2 hours | 7200 |
+| tier2 | 3 hours | 10800 |
+| tier3 | 5 hours | 18000 |
 
 For `<EXTRA_ENV_VARS>`, check the repo's `.env` file and include relevant env vars for the component. Common ones:
 - `HF_ACCESS_TOKEN` — needed for `lm_eval` tests
@@ -329,8 +338,10 @@ For `<EXTRA_ENV_VARS>`, check the repo's `.env` file and include relevant env va
 **4c-iii. Wait for Job completion:**
 
 ```bash
-oc wait --for=condition=complete --timeout=1800s job/regression-<COMPONENT>-<TIER> -n test-runner
+oc wait --for=condition=complete --timeout=<TIER_TIMEOUT>s job/regression-<COMPONENT>-<TIER> -n test-runner
 ```
+
+Use the same timeout value from the tier timeouts table above (e.g., `1800s` for smoke, `7200s` for tier1).
 
 If the wait fails (job failed), check:
 
