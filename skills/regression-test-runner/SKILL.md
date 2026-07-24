@@ -188,7 +188,9 @@ Store the created ticket key.
 
 ### Step 4: Run Tests On-Cluster
 
-Tests run inside a Job on the OpenShift cluster, not locally. This means the user's machine does not need to stay connected.
+Tests run inside sequential Jobs on the OpenShift cluster, one per tier. This means the user's machine does not need to stay connected.
+
+The tiers run in order: `smoke` → `tier1` → `tier2` → `tier3`. Each tier only runs if tests with that marker exist for the component. If `--markers` was explicitly provided, skip tier detection and run only the specified markers.
 
 **4a. Set up RBAC (idempotent):**
 
@@ -204,32 +206,56 @@ oc create serviceaccount test-runner -n test-runner --dry-run=client -o yaml | o
 oc adm policy add-cluster-role-to-user cluster-admin -z test-runner -n test-runner
 ```
 
-**4b. Delete any previous Job with the same name:**
+**4b. Detect which tiers have tests:**
+
+If `--markers` was NOT provided, check which tiers exist for this component. For each tier in `[smoke, tier1, tier2, tier3]`, run:
 
 ```bash
-oc delete job regression-<COMPONENT> -n test-runner --ignore-not-found
+python -m pytest <TEST_PATH> -m "<TIER>" --collect-only -q 2>&1 | tail -3
 ```
 
-**4c. Build the pytest command:**
+If the output shows `N tests collected` where N > 0, include that tier. If 0 tests or an error, skip that tier.
 
-Start with: `uv run pytest <TEST_PATH> -v --tb=long --cluster-sanity-skip-rhoai-check`
+Build the list of tiers to run. Report:
+```
+Tiers detected for <component>:
+  smoke: N tests
+  tier1: N tests
+  tier2: N tests
+  tier3: skipped (0 tests)
+```
 
-If `--markers` was specified, append `-m "<MARKERS>"`.
+If `--markers` WAS provided, use a single tier with that marker value.
 
-**4d. Create and apply the Job:**
+**4c. Run each tier sequentially:**
 
-Use `oc apply` with a heredoc. The Job manifest:
+For each tier in the detected list, run one Job and wait for it to complete before starting the next.
+
+For each tier:
+
+**4c-i. Delete any previous Job:**
+
+```bash
+oc delete job regression-<COMPONENT>-<TIER> -n test-runner --ignore-not-found
+```
+
+**4c-ii. Create and apply the Job:**
+
+The Job manifest is the same template for each tier, with the tier name in the Job name and the `-m "<TIER>"` marker in the pytest command.
+
+Also add any env vars the component needs (check the repo's `.env` file for values like `HF_ACCESS_TOKEN`).
 
 ```bash
 cat <<'JOBEOF' | oc apply -f -
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: regression-<COMPONENT>
+  name: regression-<COMPONENT>-<TIER>
   namespace: test-runner
   labels:
     app: regression-test-runner
     component: <COMPONENT>
+    tier: <TIER>
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 1800
@@ -245,6 +271,7 @@ spec:
           value: /home/odh
         - name: KUBECONFIG
           value: /tmp/kubeconfig
+        <EXTRA_ENV_VARS>
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -276,7 +303,7 @@ spec:
               token: ${KUBE_TOKEN}
           KCEOF
 
-          <PYTEST_COMMAND>
+          uv run pytest <TEST_PATH> -v --tb=long --cluster-sanity-skip-rhoai-check -m "<TIER>"
         resources:
           requests:
             cpu: "500m"
@@ -293,45 +320,63 @@ spec:
 JOBEOF
 ```
 
-Replace `<COMPONENT>` and `<PYTEST_COMMAND>` with actual values.
+Replace `<COMPONENT>`, `<TIER>`, `<TEST_PATH>`, and `<EXTRA_ENV_VARS>` with actual values.
 
-**4e. Monitor the Job:**
+For `<EXTRA_ENV_VARS>`, check the repo's `.env` file and include relevant env vars for the component. Common ones:
+- `HF_ACCESS_TOKEN` — needed for `lm_eval` tests
+- Other component-specific tokens or config
 
-Poll until the Job completes or fails. Use a loop with `oc get job`:
-
-```bash
-oc wait --for=condition=complete --timeout=1800s job/regression-<COMPONENT> -n test-runner
-```
-
-If that fails (job failed), check:
+**4c-iii. Wait for Job completion:**
 
 ```bash
-oc wait --for=condition=failed --timeout=5s job/regression-<COMPONENT> -n test-runner
+oc wait --for=condition=complete --timeout=1800s job/regression-<COMPONENT>-<TIER> -n test-runner
 ```
 
-**4f. Collect results:**
-
-Get the pod name and stream logs:
+If the wait fails (job failed), check:
 
 ```bash
-oc logs -n test-runner -l job-name=regression-<COMPONENT> --tail=100
+oc wait --for=condition=failed --timeout=5s job/regression-<COMPONENT>-<TIER> -n test-runner
 ```
 
-Parse the pytest summary from the last lines of the log output. Look for the standard pytest summary line: `N passed, N failed, N skipped in Ns`.
-
-Also collect the full log if failures are detected:
+**4c-iv. Collect tier results:**
 
 ```bash
-oc logs -n test-runner -l job-name=regression-<COMPONENT>
+oc logs -n test-runner -l job-name=regression-<COMPONENT>-<TIER> --tail=100
 ```
 
-Save to `/tmp/regression-output-<COMPONENT>.log` for failure analysis.
+Parse the pytest summary line. Store results for this tier.
 
-Report progress:
+If failures detected, also save full logs:
+
+```bash
+oc logs -n test-runner -l job-name=regression-<COMPONENT>-<TIER> > /tmp/regression-output-<COMPONENT>-<TIER>.log
 ```
-Tests complete (on-cluster): <passed>/<total> passed, <failed> failed, <skipped> skipped (<duration>s)
-Job: regression-<COMPONENT> in namespace test-runner
+
+Report tier progress:
 ```
+[<TIER>] complete: <passed>/<total> passed, <failed> failed, <skipped> skipped (<duration>s)
+```
+
+**4c-v. Continue to next tier** regardless of this tier's result (do not stop on failure — run all tiers to get full picture).
+
+**4d. Aggregate results:**
+
+After all tiers complete, aggregate into a combined summary:
+
+```
+All tiers complete:
+
+  Tier   | Passed | Failed | Skipped | Duration
+  -------|--------|--------|---------|----------
+  smoke  |      5 |      0 |       0 |     12s
+  tier1  |     12 |      1 |       0 |    340s
+  tier2  |      8 |      0 |       2 |    210s
+  tier3  |      — |      — |       — |  skipped
+  -------|--------|--------|---------|----------
+  Total  |     25 |      1 |       2 |    562s
+```
+
+Collect all failures across tiers for Step 5 analysis. Save combined logs to `/tmp/regression-output-<COMPONENT>.log`.
 
 ### Step 5: Analyze Failures
 
@@ -477,24 +522,29 @@ Comment body format:
 **Date:** <YYYY-MM-DD>
 **Cluster:** <server> (OCP <version>)
 **Image:** <image URI or "default">
-**Branch:** <git branch>
-**Run flag:** `--cluster-sanity-skip-rhoai-check`
+**Run mode:** On-cluster Jobs (sequential tiers)
 
-### Results: <passed> passed, <failed> failed, <skipped> skipped
+### Tier Summary
 
-| Test | Result | Classification | Notes |
-|------|--------|---------------|-------|
-| test_name_1 | PASS | — | — |
-| test_name_2 | FAIL | test_bug | [Fix PR](<pr-url>) |
-| test_name_3 | FAIL | product_bug | Needs investigation |
-| test_name_4 | FAIL | environment | Expected for hermetic images |
-| test_name_5 | SKIP | — | Pre-condition not met |
+| Tier | Passed | Failed | Skipped | Duration | Job Status |
+|------|--------|--------|---------|----------|------------|
+| smoke | N | N | N | Ns | Complete/Failed |
+| tier1 | N | N | N | Ns | Complete/Failed |
+| tier2 | N | N | N | Ns | Complete/Failed |
+| tier3 | — | — | — | — | Skipped (0 tests) |
+| **Total** | **N** | **N** | **N** | **Ns** | |
 
-**Duration:** <total>s
+### Failures
+
+| Tier | Test | Classification | Notes |
+|------|------|---------------|-------|
+| tier1 | test_name | test_bug | [Fix PR](<pr-url>) |
+| tier2 | test_name | product_bug | Needs investigation |
+| smoke | test_name | environment | Expected for hermetic images |
 
 ### Summary
 
-<2-3 sentence summary: how many passed, what failed and why, any PRs created>
+<2-3 sentence summary: how many tiers ran, what failed and why, any PRs created>
 ```
 
 ### Step 8: Transition Jira (conditional)
