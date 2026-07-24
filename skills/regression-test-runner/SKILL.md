@@ -555,6 +555,33 @@ Print a complete summary:
 - [x/—] Operator reverted to original image
 ```
 
+## Learned from Trial Runs
+
+These are hard-won lessons from real cluster testing sessions.
+
+**DSC may not be Ready — that's fine.** The cluster's DataScienceCluster often reports `Ready: False` due to unrelated components (e.g., `trainer` with `PreConditionFailed`). The components under test (TrustyAI, Kserve) can be individually ready. Always use `--cluster-sanity-skip-rhoai-check` to bypass the global DSC ready check.
+
+**On-cluster Job execution needs three things:**
+1. `mkdir -p results` — the container image has `/home/odh/opendatahub-tests/` but not the `results/` subdirectory. Without it, pytest crashes on log file creation.
+2. `HOME=/home/odh` — the container's default HOME is `/` which is read-only. Set HOME explicitly in the Job env.
+3. `KUBECONFIG=/tmp/kubeconfig` — generate kubeconfig from SA token at `/tmp/kubeconfig`. The `get_client()` function in ocp_resources tries kubeconfig first and throws `ConfigException` (not `MaxRetryError`) when none exists, bypassing the in-cluster fallback. Writing a kubeconfig from the SA token is the reliable approach.
+
+**`/home/odh` is read-only in the container.** Cannot create `.kube/` there. Use `/tmp/` for any writable files (kubeconfig, temp data).
+
+**The `oc` binary is auto-downloaded.** The test framework downloads `oc` from the cluster's ConsoleCLIDownload resource at startup. No need to pre-install it in the Job.
+
+**Image validation test (`validate_images`) will always fail for hermetic candidates.** These tests check for SHA256-pinned digests, but PR/hermetic images use tags. Classification: `environment`, not `product_bug` or `test_bug`.
+
+**HF_ACCESS_TOKEN for LM Eval.** LM Eval tests need a HuggingFace access token. The conftest reads it from `os.environ.get("HF_ACCESS_TOKEN")` or `--hf-access-token` CLI arg. Set it as an env var on the Job pod — simpler than mounting a Secret. Check the repo's `.env` file for the token value.
+
+**Konflux build status can change mid-run.** A build that showed `FAILURE` earlier may be re-triggered and show empty conclusion (in-progress). Always check both the conclusion AND verify the image exists on quay.io before proceeding.
+
+**Test namespaces are created by fixtures.** The tests create their own namespaces (e.g., `test-lmeval-hf-tier1`, `test-nemo-guardrails`). If a Job fails mid-test, these namespaces may be left behind. Clean up with `oc delete namespace <name>` after failed runs.
+
+**LM Eval tests create LMEvalJob CRs** that spawn their own pods. These pods pull the image from `RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE` — that's why patching the operator env var is necessary, not just patching the test Job image.
+
+**Ruff pre-commit needs two runs.** First run auto-fixes, second run validates. The opendatahub-tests repo's pre-commit config also enforces FCN001 (keyword-only args in test functions).
+
 ## Do Not
 
 - Do not run tests without `--cluster-sanity-skip-rhoai-check`
@@ -567,3 +594,5 @@ Print a complete summary:
 - Do not combine shell commands with `&&`, `;`, or `||`
 - Do not read the full pytest log in the main agent context — always use a subagent
 - Do not skip pre-commit hooks when committing fixes
+- Do not patch the operator with an image that hasn't been verified to exist
+- Do not forget to clean up test namespaces left by failed runs

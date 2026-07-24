@@ -283,6 +283,24 @@ Revert complete.
   Restored image: <original value>
 ```
 
+## Learned from Trial Runs
+
+These are hard-won lessons from real cluster testing sessions.
+
+**Deployment name is not obvious.** The deployment is `trustyai-service-operator-controller-manager`, not `trustyai-service-operator`. The container inside it is called `manager`.
+
+**`opendatahub.io/managed` may already be `"false"`.** On some clusters (e.g., hermetic testing environments), the annotation and label are already set to `"false"`. The `--overwrite` flag on `oc annotate` handles this idempotently.
+
+**ConfigMap and deployment env vars can diverge.** The deployment has `RELATED_IMAGE_*` env vars and the ConfigMap `trustyai-service-operator-config` has its own keys. They often hold different values (e.g., env var may have a PR pipeline tag while ConfigMap has the registry.redhat.io SHA256 digest). Both must be patched for the operator to use the candidate image when spawning sub-components.
+
+**The `oc set env` command triggers a rollout automatically** on a Deployment. Doing `oc rollout restart` after is still correct to ensure all changes (annotation + env + configmap) are picked up cleanly, but be aware the env change alone already starts a new rollout.
+
+**Konflux build failure means no image on quay.io.** Always verify the image exists (Step 1.5) before patching. A failed or in-progress Konflux build produces no image, and the operator will create pods that go into `ImagePullBackOff`.
+
+**Konflux image tag pattern:** `<component>-<full-40-char-git-sha>-linux-<arch>` pushed to `quay.io/rhoai/pull-request-pipelines`. The component name is extracted from the GitHub check name by stripping `-on-pull-request-<number>`.
+
+**Pattern matching order matters.** `trustyai-service` is a substring of `trustyai-service-operator`. The image-mapping.json array is ordered longest-first so `trustyai-service-operator` matches before the shorter `trustyai-service`.
+
 ## Do Not
 
 - Do not patch without saving backup first
@@ -291,3 +309,4 @@ Revert complete.
 - Do not proceed if `oc whoami` fails
 - Do not skip the rollout restart — env var changes need a pod restart to take effect
 - Do not delete the backup file in patch mode (only delete on successful revert)
+- Do not patch with an image that hasn't been verified to exist on the registry
