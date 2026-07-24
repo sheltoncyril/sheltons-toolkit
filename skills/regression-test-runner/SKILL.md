@@ -176,13 +176,27 @@ No Jira ticket specified. Options:
 3. Skip Jira tracking (results shown in terminal only)
 ```
 
-If creating, use the `createJiraIssue` MCP tool:
+If creating:
+
+First, look up the current user's account ID via the `atlassianUserInfo` MCP tool.
+
+Then use the `createJiraIssue` MCP tool:
 - cloudId: `redhat.atlassian.net`
 - projectKey: `RHOAIENG`
 - issueTypeName: `Task`
 - summary: `Regression test: <display_name> — <YYYY-MM-DD>`
 - description: Include component, image URI (if patched), test path, cluster server, timestamp
 - contentFormat: `markdown`
+- assignee_account_id: the account ID from `atlassianUserInfo`
+- additional_fields:
+  ```json
+  {
+    "components": [{"name": "<jira_component from component-test-map.json>"}],
+    "labels": ["regression-test", "ai-safety"]
+  }
+  ```
+
+After creation, transition to In Progress via `transitionJiraIssue` (transition ID `71`).
 
 Store the created ticket key.
 
