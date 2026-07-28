@@ -425,6 +425,12 @@ These are hard-won lessons from real cluster testing sessions.
 
 **oc cp requires the namespace/pod format.** The `oc cp` command requires the format `<namespace>/<pod-name>:<path>`, not just `<pod-name>:<path>`.
 
+**Manifest approach patches the ConfigMap but NOT the deployment env vars.** The ODH/RHOAI operator injects `RELATED_IMAGE_*` env vars from its own CSV, not from the component's params.env. The params.env generates the ConfigMap via kustomize `configMapGenerator`, but the deployment env vars are set by the ODH operator from the CSV's deployment spec. To fully swap a component image, you need BOTH this skill (for ConfigMap + CRDs + RBAC) AND `patch-operator-image` (for the deployment env var). Or patch the RHOAI CSV env vars directly.
+
+**fsGroup in the CSV patch can break on ROSA/restricted SCCs.** The hardcoded `fsGroup: 1001` is rejected by `restricted-v2` SCC. Instead, read the namespace's allowed supplemental group range from `openshift.io/sa.scc.supplemental-groups` annotation and use the first value in that range. Or omit fsGroup entirely if the SA already has write access to the PVC.
+
+**OLM caches the deployment spec.** After patching the CSV, OLM may not immediately update the deployment's ReplicaSet. If the pod fails to start, delete the stale RS to force recreation. Or patch the deployment directly as a fallback.
+
 ## Do Not
 
 - Do not apply the CSV patch if the volumeMount already exists
