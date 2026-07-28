@@ -404,7 +404,7 @@ oc logs -n test-runner -l job-name=regression-<COMPONENT>-<TIER> --tail=100
 If that returns empty or "not found", read from the PVC via a temporary debug pod:
 
 ```bash
-oc run log-reader --rm -i --restart=Never -n test-runner --image=quay.io/opendatahub/opendatahub-tests:latest --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-reader","image":"quay.io/opendatahub/opendatahub-tests:latest","command":["tail","-100","/logs/<COMPONENT>/<TIER>.log"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}' 2>&1
+oc run log-reader --rm -i --restart=Never -n test-runner --image=quay.io/trustyai_testing/busybox:latest --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-reader","image":"quay.io/trustyai_testing/busybox:latest","command":["tail","-100","/logs/<COMPONENT>/<TIER>.log"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}' 2>&1
 ```
 
 Parse the pytest summary line. Store results for this tier.
@@ -412,7 +412,7 @@ Parse the pytest summary line. Store results for this tier.
 Save full logs locally for failure analysis:
 
 ```bash
-oc run log-reader --rm -i --restart=Never -n test-runner --image=quay.io/opendatahub/opendatahub-tests:latest --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-reader","image":"quay.io/opendatahub/opendatahub-tests:latest","command":["cat","/logs/<COMPONENT>/<TIER>.log"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}' > /tmp/regression-output-<COMPONENT>-<TIER>.log 2>&1
+oc run log-reader --rm -i --restart=Never -n test-runner --image=quay.io/trustyai_testing/busybox:latest --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-reader","image":"quay.io/trustyai_testing/busybox:latest","command":["cat","/logs/<COMPONENT>/<TIER>.log"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}' > /tmp/regression-output-<COMPONENT>-<TIER>.log 2>&1
 ```
 
 Report tier progress:
@@ -446,7 +446,7 @@ Collect all failures across tiers for Step 5 analysis. Save combined logs to `/t
 Logs on the PVC persist across runs. To clean up old logs after analysis:
 
 ```bash
-oc run log-cleanup --rm -i --restart=Never -n test-runner --image=quay.io/opendatahub/opendatahub-tests:latest --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-cleanup","image":"quay.io/opendatahub/opendatahub-tests:latest","command":["rm","-rf","/logs/<COMPONENT>"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}'
+oc run log-cleanup --rm -i --restart=Never -n test-runner --image=quay.io/trustyai_testing/busybox:latest --overrides='{"spec":{"volumes":[{"name":"logs","persistentVolumeClaim":{"claimName":"regression-logs"}}],"containers":[{"name":"log-cleanup","image":"quay.io/trustyai_testing/busybox:latest","command":["rm","-rf","/logs/<COMPONENT>"],"volumeMounts":[{"name":"logs","mountPath":"/logs"}]}]}}'
 ```
 
 Only clean up after results have been reported to Jira and analysis is complete.
