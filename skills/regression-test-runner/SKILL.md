@@ -371,8 +371,8 @@ Replace `<COMPONENT>`, `<TIER>`, `<TEST_PATH>`, `<EXTRA_ENV_VARS>`, and `<TIER_T
 | Tier | Timeout | activeDeadlineSeconds |
 |------|---------|----------------------|
 | smoke | 30 min | 1800 |
-| tier1 | 2 hours | 7200 |
-| tier2 | 3 hours | 10800 |
+| tier1 | 4 hours | 14400 |
+| tier2 | 8 hours | 28800 |
 | tier3 | 5 hours | 18000 |
 
 For `<EXTRA_ENV_VARS>`, check the repo's `.env` file and include relevant env vars for the component. Common ones:
@@ -705,7 +705,7 @@ These are hard-won lessons from real cluster testing sessions.
 
 **Logs vanish when pods are cleaned up.** When `activeDeadlineSeconds` is exceeded, Kubernetes kills the pod and `oc logs` returns nothing. The PVC-based log persistence (`/logs/<component>/<tier>.log`) solves this — logs survive pod deletion, Job cleanup, and timeouts. Always use `tee` to write to both stdout and the PVC. Fall back to the PVC reader pod when `oc logs` returns empty.
 
-**LM Eval tier1 tests are very long-running.** Model downloads + inference can exceed 2 hours easily. Tier timeouts should be generous: 30m smoke, 2h tier1, 3h tier2, 5h tier3. If tier1 still times out, consider running with subset markers or increasing the timeout further.
+**LM Eval tier1 tests are very long-running.** Model downloads + inference can exceed 2 hours easily. Tier timeouts should be generous: 30m smoke, 4h tier1, 8h tier2, 5h tier3.
 
 **Ruff pre-commit needs two runs.** First run auto-fixes, second run validates. The opendatahub-tests repo's pre-commit config also enforces FCN001 (keyword-only args in test functions).
 
