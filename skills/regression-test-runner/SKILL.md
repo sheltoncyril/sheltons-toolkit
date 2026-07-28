@@ -295,6 +295,15 @@ spec:
     spec:
       serviceAccountName: test-runner
       restartPolicy: Never
+      initContainers:
+      - name: fix-permissions
+        image: quay.io/opendatahub/opendatahub-tests:latest
+        command: ["sh", "-c", "mkdir -p /logs/<COMPONENT> && chmod -R 777 /logs"]
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: logs
+          mountPath: /logs
       containers:
       - name: test-runner
         image: quay.io/opendatahub/opendatahub-tests:latest
@@ -690,6 +699,8 @@ These are hard-won lessons from real cluster testing sessions.
 3. `KUBECONFIG=/tmp/kubeconfig` — generate kubeconfig from SA token at `/tmp/kubeconfig`. The `get_client()` function in ocp_resources tries kubeconfig first and throws `ConfigException` (not `MaxRetryError`) when none exists, bypassing the in-cluster fallback. Writing a kubeconfig from the SA token is the reliable approach.
 
 **`/home/odh` is read-only in the container.** Cannot create `.kube/` there. Use `/tmp/` for any writable files (kubeconfig, temp data).
+
+**PVC needs an initContainer to fix permissions.** The PVC is created with root-owned `lost+found`. The test container runs as non-root user `odh` (uid 1000). An initContainer with `runAsUser: 0` must `mkdir -p /logs/<component> && chmod -R 777 /logs` before the test container starts. Without this, `mkdir` in the main container fails with permission denied.
 
 **The `oc` binary is auto-downloaded.** The test framework downloads `oc` from the cluster's ConsoleCLIDownload resource at startup. No need to pre-install it in the Job.
 
