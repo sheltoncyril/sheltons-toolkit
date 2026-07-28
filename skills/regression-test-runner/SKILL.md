@@ -238,7 +238,17 @@ spec:
 PVCEOF
 ```
 
-**4b. Detect which tiers have tests:**
+**4b. Clean up stale test namespaces:**
+
+Previous failed runs may leave test namespaces behind, causing resource conflicts. Delete them before starting.
+
+```bash
+oc get namespaces -o name | grep -E "test-lmeval|test-nemo|test-guardrails|test-trustyai|test-evalhub" | xargs -r oc delete --ignore-not-found
+```
+
+Wait for all deletions to complete before proceeding.
+
+**4c. Detect which tiers have tests:**
 
 If `--markers` was NOT provided, check which tiers exist for this component. For each tier in `[smoke, tier1, tier2, tier3]`, run:
 
@@ -710,7 +720,7 @@ These are hard-won lessons from real cluster testing sessions.
 
 **Konflux build status can change mid-run.** A build that showed `FAILURE` earlier may be re-triggered and show empty conclusion (in-progress). Always check both the conclusion AND verify the image exists on quay.io before proceeding.
 
-**Test namespaces are created by fixtures.** The tests create their own namespaces (e.g., `test-lmeval-hf-tier1`, `test-nemo-guardrails`). If a Job fails mid-test, these namespaces may be left behind. Clean up with `oc delete namespace <name>` after failed runs.
+**Test namespaces are created by fixtures.** The tests create their own namespaces (e.g., `test-lmeval-hf-tier1`, `test-nemo-guardrails`). If a Job fails mid-test, these namespaces are left behind and cause resource conflicts on the next run (e.g., "already exists" errors). The skill now cleans up stale test namespaces before starting (Step 4b). Pattern: `test-lmeval*`, `test-nemo*`, `test-guardrails*`, `test-trustyai*`, `test-evalhub*`.
 
 **LM Eval tests create LMEvalJob CRs** that spawn their own pods. These pods pull the image from `RELATED_IMAGE_ODH_TA_LMES_JOB_IMAGE` — that's why patching the operator env var is necessary, not just patching the test Job image.
 
