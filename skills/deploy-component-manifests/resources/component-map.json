@@ -1,0 +1,11 @@
+{
+  "trustyai": {
+    "manifest_path": "trustyai",
+    "operator_deployment": "trustyai-service-operator-controller-manager",
+    "applications_namespace": "redhat-ods-applications",
+    "params_env_path": "config/overlays/<overlay>/params.env",
+    "detection_file": "config/overlays/odh/params.env",
+    "detection_pattern": "trustyaiServiceImage",
+    "overlays": ["odh", "rhoai", "testing", "lmes", "evalhub-only", "mcp-guardrails", "odh-kueue"]
+  }
+}
