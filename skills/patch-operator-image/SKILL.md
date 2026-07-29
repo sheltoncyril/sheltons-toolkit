@@ -299,6 +299,8 @@ These are hard-won lessons from real cluster testing sessions.
 
 **Konflux image tag pattern:** `<component>-<full-40-char-git-sha>-linux-<arch>` pushed to `quay.io/rhoai/pull-request-pipelines`. The component name is extracted from the GitHub check name by stripping `-on-pull-request-<number>`.
 
+**Use digests, not tags, for internal registry images.** When patching with images from the internal OpenShift registry (`image-registry.openshift-image-registry.svc:5000`), always use the `@sha256:` digest, not `:latest` tag. Tags can be cached by the node — the operator pod will run a stale build even after a rollout restart. Digests are immutable and force a fresh pull. Get the digest from `oc get imagestream <name> -n <ns> -o jsonpath='{.status.tags[?(@.tag=="latest")].items[0].image}'`.
+
 **Pattern matching order matters.** `trustyai-service` is a substring of `trustyai-service-operator`. The image-mapping.json array is ordered longest-first so `trustyai-service-operator` matches before the shorter `trustyai-service`.
 
 ## Do Not
