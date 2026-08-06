@@ -15,7 +15,16 @@ A Claude Code plugin with opinionated skills for code review, Jira hygiene, and 
 | `review` | `/sheltons-toolkit:review <PR-URL>` | Multi-persona PR review with confidence scoring |
 | `jira-hygiene-setup` | `/sheltons-toolkit:jira-hygiene-setup` | Configure project settings for Jira hygiene checks |
 | `jira-hygiene-check` | `/sheltons-toolkit:jira-hygiene-check [scope]` | Check Jira tickets against team hygiene rules |
+| `install-rhoai-nightly` | `/sheltons-toolkit:install-rhoai-nightly <fbc-image> [--channel <ch>]` | Install RHOAI nightly from FBC fragment image |
+| `install-dependencies` | `/sheltons-toolkit:install-dependencies [--helm] [--branch <b>]` | Install all RHOAI dependency operators via GitOps or Helm |
+| `install-operator` | `/sheltons-toolkit:install-operator <name> [--channel <ch>]` | Install any individual RHOAI dependency operator |
+| `create-dsc` | `/sheltons-toolkit:create-dsc [custom-dsc.yaml]` | Create DataScienceCluster and wait for Ready |
+| `cleanup-rhoai` | `/sheltons-toolkit:cleanup-rhoai [--nuke]` | Clean up RHOAI (standard or nuke mode with all deps) |
+| `configure-gateway` | `/sheltons-toolkit:configure-gateway <maas\|llmd\|postgres>` | Configure MaaS or llm-d gateway |
+| `configure-disconnected` | `/sheltons-toolkit:configure-disconnected <mirror-registry>` | Configure RHCL for disconnected/air-gapped clusters |
+| `verify-install` | `/sheltons-toolkit:verify-install [--full]` | Check RHOAI installation health and status |
 | `patch-operator-image` | `/sheltons-toolkit:patch-operator-image <image\|revert>` | Patch TrustyAI operator with a candidate image (auto-revert) |
+| `deploy-component-manifests` | `/sheltons-toolkit:deploy-component-manifests <repo-path>` | Deploy custom component manifests into OLM operator |
 | `regression-test-runner` | `/sheltons-toolkit:regression-test-runner <component> [flags]` | End-to-end regression tests with failure analysis and Jira reporting |
 
 ## How `review` works
@@ -92,6 +101,47 @@ End-to-end regression testing orchestrator for TrustyAI/AI Safety components:
 ## Usage
 
 ```
+# --- RHOAI Cluster Lifecycle ---
+
+# Install RHOAI nightly from FBC fragment
+/sheltons-toolkit:install-rhoai-nightly quay.io/rhoai/rhoai-fbc-fragment:rhoai-3.5@sha256:abc123
+
+# Install all dependency operators (GitOps)
+/sheltons-toolkit:install-dependencies
+
+# Install all dependencies via Helm (all-in-one)
+/sheltons-toolkit:install-dependencies --helm
+
+# Install a single dependency operator
+/sheltons-toolkit:install-operator kueue-operator
+/sheltons-toolkit:install-operator serverless-operator --channel stable
+
+# Create DataScienceCluster
+/sheltons-toolkit:create-dsc
+
+# Configure MaaS gateway
+/sheltons-toolkit:configure-gateway maas
+
+# Configure llm-d gateway (disconnected)
+/sheltons-toolkit:configure-gateway llmd --disconnected mirror.example.com:5000
+
+# Configure RHCL for disconnected cluster
+/sheltons-toolkit:configure-disconnected mirror.example.com:5000
+
+# Verify RHOAI installation (quick)
+/sheltons-toolkit:verify-install
+
+# Verify RHOAI installation (full with all deps)
+/sheltons-toolkit:verify-install --full
+
+# Cleanup RHOAI (standard)
+/sheltons-toolkit:cleanup-rhoai
+
+# Cleanup RHOAI + all dependency operators
+/sheltons-toolkit:cleanup-rhoai --nuke
+
+# --- Code Review & Testing ---
+
 # PR review
 /sheltons-toolkit:review https://github.com/org/repo/pull/123
 
@@ -106,6 +156,9 @@ End-to-end regression testing orchestrator for TrustyAI/AI Safety components:
 
 # Patch operator with candidate image
 /sheltons-toolkit:patch-operator-image quay.io/rhoai/pull-request-pipelines:odh-trustyai-nemo-guardrails-server-rhel9-abc123-linux-x86-64
+
+# Deploy custom component manifests
+/sheltons-toolkit:deploy-component-manifests ../trustyai-service-operator
 
 # Revert operator to original image
 /sheltons-toolkit:patch-operator-image revert
