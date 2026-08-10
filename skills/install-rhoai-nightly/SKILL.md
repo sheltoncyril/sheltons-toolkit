@@ -26,7 +26,7 @@ quay.io/rhoai/rhoai-fbc-fragment:rhoai-3.5@sha256:3d60...
 ```
 
 - `<fbc-fragment-image>` — required. The FBC fragment image URI (typically from Slack or email).
-- `--channel <channel>` — optional. OLM subscription channel. If omitted, inferred from image tag.
+- `--channel <channel>` — optional. OLM subscription channel. If omitted, determined by extracting the FBC fragment's own catalog data (falls back to image-tag inference, then asks the user).
 
 ## Steps
 
@@ -42,14 +42,54 @@ Example:
   /install-rhoai-nightly quay.io/rhoai/rhoai-fbc-fragment:rhoai-3.5@sha256:abc123 --channel stable-3.5
 ```
 
-**Channel inference** (when `--channel` not provided):
-Extract the image tag (portion between `:` and `@`). If it matches pattern `rhoai-X.Y`, derive channel `stable-X.Y`. For example:
-- `rhoai-fbc-fragment:rhoai-3.5@sha256:...` → tag `rhoai-3.5` → channel `stable-3.5`
-- `rhoai-fbc-fragment:rhoai-3.4@sha256:...` → tag `rhoai-3.4` → channel `stable-3.4`
+**Channel detection** (when `--channel` not provided):
 
-If inference fails (no recognizable version in tag), ask the user with `AskUserQuestion`:
+Don't guess the channel from the image tag alone — inspect the fragment's real catalog data. Tag-based guessing (`rhoai-3.5` → `stable-3.5`) is a heuristic that can silently resolve to the wrong CSV: a fragment can carry a `beta` channel still pinned to an early-access build (e.g. `3.5.0-ea.2`) alongside a `stable-3.5` channel that's already GA (`3.5.0`) — same fragment, same tag, different truth depending on which channel you pick.
+
+**Primary method — extract and read the actual catalog:**
+
+```bash
+mkdir -p /tmp/fbc-inspect
+oc image extract "<IMAGE>" --path /configs:/tmp/fbc-inspect --confirm
 ```
-Could not infer channel from image tag. What channel should the subscription use?
+
+This works even though FBC images are typically scratch-based (no shell) — `oc image extract` reads the image layers directly, no `podman run` or `opm` needed. Requires only that you're logged in to a cluster (`oc login`) with registry pull access to the image.
+
+Find the catalog file (usually `.../<pkg-name>/catalog.yaml`, occasionally JSON lines):
+
+```bash
+find /tmp/fbc-inspect -iname "catalog.yaml" -o -iname "catalog.json"
+```
+
+Parse every channel and the CSV its latest entry resolves to:
+
+```bash
+python3 -c "
+import yaml
+docs = list(yaml.safe_load_all(open('<catalog-file>')))
+for d in docs:
+    if d and d.get('schema') == 'olm.channel':
+        entries = d.get('entries', [])
+        latest = entries[-1]['name'] if entries else None
+        print(d.get('name'), '->', latest)
+"
+```
+
+(If the file is JSON lines instead of a single YAML doc, parse with `json.loads` per line instead of `yaml.safe_load_all`.)
+
+Match the image tag's version against the channel names (tag `rhoai-3.5` → look for channels containing `3.5`; prefer an exact `stable-X.Y` match over `beta`/`fast`/`eus` variants unless the user asked for one of those tracks). Report the match plainly before proceeding, e.g.:
+
+```
+Found channel 'stable-3.5' -> rhods-operator.3.5.0
+```
+
+Clean up: `rm -rf /tmp/fbc-inspect`
+
+**Fallback** (only if `oc image extract` fails — no cluster access yet, registry auth issue, or no matching channel found in the catalog): fall back to tag-based inference. Extract the tag (portion between `:` and `@`); if it matches `rhoai-X.Y`, derive channel `stable-X.Y`. Flag clearly that this is an unverified guess, not a confirmed match.
+
+If both methods fail, ask the user with `AskUserQuestion`:
+```
+Could not determine channel from the FBC fragment or image tag. What channel should the subscription use?
 Options: stable-3.5, stable-3.4, fast
 ```
 
@@ -391,7 +431,7 @@ Dependency Operators:
 
 2. **Channel must match the FBC fragment version.** Using `fast` channel with a `rhoai-3.5` FBC fragment installs `rhods-operator.2.25.9` instead of `rhods-operator.3.5.0`. The channel in the subscription must correspond to the version track in the FBC catalog.
 
-3. **Channel inference from image tag.** Extract the tag between `:` and `@`. If tag matches `rhoai-X.Y`, derive channel `stable-X.Y`.
+3. **Channel inference from image tag is a fallback, not the primary method.** Extract the tag between `:` and `@`; if it matches `rhoai-X.Y`, derive channel `stable-X.Y` — but only after `oc image extract` on the fragment itself fails or is unavailable. Confirmed by trial: `oc image extract "<image>" --path /configs:/tmp/fbc-inspect --confirm` pulls the real declarative catalog (usually at `configs/<pkg>/catalog.yaml`) even for scratch-based images with no shell — no `opm` or `podman run` needed. Reading `olm.channel` entries from it gives the actual CSV each channel resolves to, which is the only way to know for certain (see item 9).
 
 4. **`install-operator.sh` handles Manual InstallPlan approval.** The `leader-worker-set` and `rhcl-operator` subscriptions use `installPlanApproval: Manual`. Helper functions in `utils/oc_approve.sh` handle auto-approving. This can take 2-5 minutes.
 
@@ -403,10 +443,13 @@ Dependency Operators:
 
 8. **`setup.sh` modifies `operator-catalogsource.yaml` in-place.** The `perl -i -pe` command replaces the image line. Safe to re-run — overwrites previous image.
 
+9. **The same version tag can map to different real versions depending on channel.** Observed on a `rhoai-3.5` fragment: `beta` resolved to `rhods-operator.3.5.0-ea.2` (early access) while `stable-3.5` resolved to `rhods-operator.3.5.0` (GA) — both channels existed in the same fragment, same image tag. Guessing `stable-X.Y` from the tag happened to be right that time, but nothing guarantees it: some fragments only carry a `beta`/`fast`/`eus-X.Y` channel for a given version, or `stable-X.Y` might not be cut yet. Always extract and check before installing.
+
 ## Do Not
 
 - Do not run `setup.sh` from a directory other than the olminstall repo root
-- Do not default channel to `fast` — always infer from image tag or ask user
+- Do not default channel to `fast` — always confirm via `oc image extract` first, fall back to tag inference, then ask user
+- Do not trust tag-based channel inference (`rhoai-X.Y` → `stable-X.Y`) as ground truth — it's a last-resort fallback; the fragment's actual `olm.channel` entries are authoritative
 - Do not skip dependency operator installation — DSC will be stuck without them
 - Do not run `create-dsc.sh` before dependency operators are installed
 - Do not modify `~/.docker/config.json` — only read it for validation
