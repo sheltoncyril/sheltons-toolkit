@@ -95,14 +95,14 @@ If no, stop with: "Keeping existing DSC. No changes made."
 
 ### Step 3: Locate olminstall Repo
 
-Search these paths in order. Each is a separate Bash call:
-
-```bash
-ls -d /Users/scyril/Desktop/Work/olminstall/create-dsc.sh 2>/dev/null
-```
+Search these paths in order (same order as the other olminstall-based skills). Each is a separate Bash call:
 
 ```bash
 ls -d ../olminstall/create-dsc.sh 2>/dev/null
+```
+
+```bash
+ls -d ~/Desktop/Work/olminstall/create-dsc.sh 2>/dev/null
 ```
 
 ```bash
@@ -113,17 +113,22 @@ ls -d ~/olminstall/create-dsc.sh 2>/dev/null
 ls -d /tmp/olminstall/create-dsc.sh 2>/dev/null
 ```
 
-If none found, attempt clone:
+If none found, check for a user-configured clone URL (olminstall is an internal Red Hat repo — its URL is never hardcoded here, only sourced from the user's own environment):
 
 ```bash
-git clone https://gitlab.cee.redhat.com/data-hub/olminstall.git /tmp/olminstall
+echo "${OLMINSTALL_REPO_URL:-unset}"
 ```
 
-If clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
+If set, attempt clone:
+
+```bash
+git clone "$OLMINSTALL_REPO_URL" /tmp/olminstall
+```
+
+If unset or the clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
 ```
 Could not locate or clone the olminstall repo.
-Please provide the full path to your local olminstall directory.
-(Clone from: https://gitlab.cee.redhat.com/data-hub/olminstall -- VPN required)
+Please provide either the full path to your local olminstall directory, or set OLMINSTALL_REPO_URL to its clone URL (internal — VPN required) and retry.
 ```
 
 After obtaining a path, validate it has the required files:
@@ -158,6 +163,14 @@ grep -q "kind: DataScienceCluster" <CUSTOM_DSC_PATH>
 
 If not found, stop with: "File `<CUSTOM_DSC_PATH>` does not appear to contain a DataScienceCluster resource."
 
+Check the DSC name, since `oc_wait_for_dsc` in Step 5 hardcodes the name `default-dsc` and will silently time out waiting on a DSC that never appears under that name:
+
+```bash
+grep -q "name: default-dsc" <CUSTOM_DSC_PATH>
+```
+
+If not found, warn the user: "Custom DSC is named something other than `default-dsc` — the script's wait logic will time out looking for `default-dsc` even though your DSC may apply and reconcile successfully. Continue anyway?" via `AskUserQuestion`.
+
 Report: "Custom DSC file validated: `<CUSTOM_DSC_PATH>`"
 
 ### Step 5: Run create-dsc.sh
@@ -182,7 +195,7 @@ Without custom DSC (default):
 bash create-dsc.sh
 ```
 
-Use a 600000ms timeout for this command. The script internally calls `oc_wait_for_dsc` (polls up to 60 iterations at 10s each = 600s) and `oc_wait_for_pods` (polls up to 60 iterations at 20s each = 1200s).
+Run this in the background (`run_in_background: true`) instead of a synchronous timeout. The script internally calls `oc_wait_for_dsc` (up to 600s) and `oc_wait_for_pods` (up to 1200s) — a combined worst case of 1800s, which exceeds the Bash tool's 600000ms (10-minute) foreground timeout cap. Wait for the background completion notification before moving to Step 6.
 
 If the script exits with a non-zero status, capture and report the error output. Common failures:
 - "Cannot find csv with name 'rhods-operator*'" -- the operator is not installed or the CSV is not in the `default` namespace
@@ -294,6 +307,6 @@ These are hard-won lessons from real cluster testing sessions.
 - Do not skip the existing-DSC check -- applying a second DSC without deleting the first can cause reconciliation conflicts
 - Do not assume the olminstall repo is already cloned -- always search and fall back to clone
 - Do not use a custom DSC with a name other than `default-dsc` without warning the user that the wait will not work
-- Do not set the Bash timeout below 600000ms for the `create-dsc.sh` call -- the internal waits need up to 600s for DSC plus 1200s for pods
+- Do not run `create-dsc.sh` as a synchronous foreground call -- the internal waits need up to 600s for DSC plus 1200s for pods (1800s total), which exceeds the Bash tool's 600000ms foreground cap; use `run_in_background: true`
 - Do not assume dependency operators are installed -- if DSC fails to reach Ready, suggest checking for missing deps
 - Do not silently swallow script errors -- always report the full output from `create-dsc.sh` on failure

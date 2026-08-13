@@ -253,8 +253,10 @@ Wait for all deletions to complete before proceeding.
 If `--markers` was NOT provided, check which tiers exist for this component. For each tier in `[smoke, tier1, tier2, tier3]`, run:
 
 ```bash
-python -m pytest <TEST_PATH> -m "<TIER>" --collect-only -q 2>&1 | tail -3
+python -m pytest <TEST_PATH> -m "<TIER> and <DEFAULT_MARKERS>" --collect-only -q 2>&1 | tail -3
 ```
+
+`<DEFAULT_MARKERS>` is the component's `default_markers` value from `component-test-map.json` (e.g. `ai_safety`). Combining it with the tier marker guards against collecting unrelated tests if the component's test directory ever grows a conftest-shared or differently-owned test file.
 
 If the output shows `N tests collected` where N > 0, include that tier. If 0 tests or an error, skip that tier.
 
@@ -269,21 +271,21 @@ Tiers detected for <component>:
 
 If `--markers` WAS provided, use a single tier with that marker value.
 
-**4c. Run each tier sequentially:**
+**4d. Run each tier sequentially:**
 
 For each tier in the detected list, run one Job and wait for it to complete before starting the next.
 
 For each tier:
 
-**4c-i. Delete any previous Job:**
+**4d-i. Delete any previous Job:**
 
 ```bash
 oc delete job regression-<COMPONENT>-<TIER> -n test-runner --ignore-not-found
 ```
 
-**4c-ii. Create and apply the Job:**
+**4d-ii. Create and apply the Job:**
 
-The Job manifest is the same template for each tier, with the tier name in the Job name and the `-m "<TIER>"` marker in the pytest command.
+The Job manifest is the same template for each tier, with the tier name in the Job name and the `-m "<TIER> and <DEFAULT_MARKERS>"` marker expression in the pytest command.
 
 Also add any env vars the component needs (check the repo's `.env` file for values like `HF_ACCESS_TOKEN`).
 
@@ -357,7 +359,7 @@ spec:
           LOG_DIR=/logs/<COMPONENT>
           mkdir -p ${LOG_DIR}
           
-          uv run pytest <TEST_PATH> -v --tb=long --cluster-sanity-skip-rhoai-check -m "<TIER>" 2>&1 | tee ${LOG_DIR}/<TIER>.log
+          uv run pytest <TEST_PATH> -v --tb=long --cluster-sanity-skip-rhoai-check -m "<TIER> and <DEFAULT_MARKERS>" 2>&1 | tee ${LOG_DIR}/<TIER>.log
           
           EXIT_CODE=${PIPESTATUS[0]}
           echo "EXIT_CODE=${EXIT_CODE}" > ${LOG_DIR}/<TIER>.exitcode
@@ -383,7 +385,7 @@ spec:
 JOBEOF
 ```
 
-Replace `<COMPONENT>`, `<TIER>`, `<TEST_PATH>`, `<EXTRA_ENV_VARS>`, and `<TIER_TIMEOUT>` with actual values.
+Replace `<COMPONENT>`, `<TIER>`, `<TEST_PATH>`, `<DEFAULT_MARKERS>`, `<EXTRA_ENV_VARS>`, and `<TIER_TIMEOUT>` with actual values.
 
 **Tier timeouts (activeDeadlineSeconds):**
 
@@ -398,7 +400,7 @@ For `<EXTRA_ENV_VARS>`, check the repo's `.env` file and include relevant env va
 - `HF_ACCESS_TOKEN` — needed for `lm_eval` tests
 - Other component-specific tokens or config
 
-**4c-iii. Wait for Job completion:**
+**4d-iii. Wait for Job completion:**
 
 ```bash
 oc wait --for=condition=complete --timeout=<TIER_TIMEOUT>s job/regression-<COMPONENT>-<TIER> -n test-runner
@@ -412,7 +414,7 @@ If the wait fails (job failed), check:
 oc wait --for=condition=failed --timeout=5s job/regression-<COMPONENT>-<TIER> -n test-runner
 ```
 
-**4c-iv. Collect tier results:**
+**4d-iv. Collect tier results:**
 
 Try pod logs first (fastest). If pod was cleaned up (deadline exceeded, OOM), fall back to the PVC.
 
@@ -439,9 +441,9 @@ Report tier progress:
 [<TIER>] complete: <passed>/<total> passed, <failed> failed, <skipped> skipped (<duration>s)
 ```
 
-**4c-v. Continue to next tier** regardless of this tier's result (do not stop on failure — run all tiers to get full picture).
+**4d-v. Continue to next tier** regardless of this tier's result (do not stop on failure — run all tiers to get full picture).
 
-**4d. Aggregate results:**
+**4e. Aggregate results:**
 
 After all tiers complete, aggregate into a combined summary:
 
@@ -460,7 +462,7 @@ All tiers complete:
 
 Collect all failures across tiers for Step 5 analysis. Save combined logs to `/tmp/regression-output-<COMPONENT>.log`.
 
-**4e. Log persistence note:**
+**4f. Log persistence note:**
 
 Logs on the PVC persist across runs. To clean up old logs after analysis:
 
@@ -474,7 +476,9 @@ Only clean up after results have been reported to Jira and analysis is complete.
 
 If there are no failures (failed == 0 and errors == 0), skip to Step 7.
 
-For each failure (up to 5), spawn analysis agents **in parallel** (send all Agent calls in a single message). Each agent gets this prompt:
+Analyze up to 5 failures in detail. If there are more than 5, pick the 5 most distinct (dedupe by error message/test class first) and note in the summary how many were skipped and why, so the cap is visible in the final report rather than silently dropped.
+
+For each selected failure, spawn analysis agents **in parallel** (send all Agent calls in a single message). Each agent gets this prompt:
 
 > Analyze this test failure from the `<component>` regression suite.
 >

@@ -93,6 +93,8 @@ Could not determine channel from the FBC fragment or image tag. What channel sho
 Options: stable-3.5, stable-3.4, fast
 ```
 
+Regardless of which path was taken (primary match, fallback, or ask-user), clean up before continuing: `rm -rf /tmp/fbc-inspect` — the extraction can partially populate this directory even on failure, and leaving it behind can confuse a later re-run of this step.
+
 Store `IMAGE` and `CHANNEL` for subsequent steps.
 
 ### Step 1: Preflight Checks
@@ -153,17 +155,22 @@ ls -d ~/olminstall/setup.sh 2>/dev/null
 ls -d /tmp/olminstall/setup.sh 2>/dev/null
 ```
 
-If none found, attempt clone:
+If none found, check for a user-configured clone URL (olminstall is an internal Red Hat repo — its URL is never hardcoded here, only sourced from the user's own environment):
 
 ```bash
-git clone https://gitlab.cee.redhat.com/data-hub/olminstall.git /tmp/olminstall
+echo "${OLMINSTALL_REPO_URL:-unset}"
 ```
 
-If clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
+If set, attempt clone:
+
+```bash
+git clone "$OLMINSTALL_REPO_URL" /tmp/olminstall
+```
+
+If unset or the clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
 ```
 Could not locate or clone the olminstall repo.
-Please provide the full path to your local olminstall directory.
-(Clone from: https://gitlab.cee.redhat.com/data-hub/olminstall — VPN required)
+Please provide either the full path to your local olminstall directory, or set OLMINSTALL_REPO_URL to its clone URL (internal — VPN required) and retry.
 ```
 
 After obtaining a path, validate it has the required scripts:
@@ -286,11 +293,13 @@ Change to olminstall directory (required — `setup.sh` uses relative paths):
 cd <OLMINSTALL_PATH>
 ```
 
-Run the install:
+Run the install in the background (`run_in_background: true`) — OLM catalog setup and subscription resolution routinely exceeds the Bash tool's 600000ms (10-minute) foreground cap:
 
 ```bash
 bash setup.sh -t operator -u <CHANNEL> -i <IMAGE>
 ```
+
+Wait for the background completion notification before moving to Step 7.
 
 ### Step 7: Wait for CSV
 
@@ -298,13 +307,13 @@ bash setup.sh -t operator -u <CHANNEL> -i <IMAGE>
 oc get csv -n redhat-ods-operator --no-headers 2>/dev/null | grep -i rhods
 ```
 
-If no CSV found yet, wait:
+If no CSV found yet, wait and retry, up to 20 times (10 minutes total):
 
 ```bash
 sleep 30
 ```
 
-Then retry. Once a CSV name is found:
+If no CSV appears after 20 attempts, stop and report: "No rhods-operator CSV appeared after 10 minutes. Check the subscription and CatalogSource: `oc get subscription,catalogsource -n redhat-ods-operator`." Once a CSV name is found:
 
 ```bash
 oc wait csv <CSV_NAME> -n redhat-ods-operator --for=jsonpath='{.status.phase}'=Succeeded --timeout=300s
@@ -320,7 +329,7 @@ Report status but continue — dependency operators may be needed first.
 
 ### Step 8: Install Dependency Operators
 
-Check and install each. All `install-operator.sh` calls must run from the olminstall directory.
+Check and install each. All `install-operator.sh` calls must run from the olminstall directory and in the background (`run_in_background: true`) — rhcl-operator additionally waits on authorino-operator and can take 5+ minutes, exceeding the Bash tool's 600000ms foreground cap. Wait for each background completion notification before checking the next operator.
 
 ```bash
 cd <OLMINSTALL_PATH>
@@ -370,9 +379,13 @@ Report which operators were installed vs already present.
 cd <OLMINSTALL_PATH>
 ```
 
+Run in the background (`run_in_background: true`) — `create-dsc.sh`'s internal waits can take up to 1800s total, exceeding the Bash tool's 600000ms foreground cap:
+
 ```bash
 bash create-dsc.sh
 ```
+
+Wait for the background completion notification before moving to Step 10.
 
 ### Step 10: Wait for DSC Ready
 

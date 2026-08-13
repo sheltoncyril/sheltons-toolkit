@@ -83,18 +83,16 @@ oc get dsc --no-headers 2>/dev/null
 oc get dsci --no-headers 2>/dev/null
 ```
 
-If a DSC exists, get its phase:
+If a DSC exists, take its name from the `oc get dsc` output above as `<DSC_NAME>` (it is usually `default-dsc`, but do not assume this — use whatever name actually appears). Get its phase:
 
 ```bash
-oc get dsc default-dsc -o jsonpath='{.status.phase}'
+oc get dsc <DSC_NAME> -o jsonpath='{.status.phase}'
 ```
-
-If the DSC name is not `default-dsc`, use the actual name from the previous command.
 
 Get the DSC conditions for detail:
 
 ```bash
-oc get dsc default-dsc -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
+oc get dsc <DSC_NAME> -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
 ```
 
 Store `DSC_NAME`, `DSC_PHASE`, and any condition details. Note which components have issues (e.g., `ReconcileFailed`, `PreConditionFailed`).
@@ -132,6 +130,12 @@ Store the counts and any problematic pod names with their status.
 
 ### Step 6: Quick Summary
 
+Get the console URL first so it's available for the print template below:
+
+```bash
+oc whoami --show-console
+```
+
 Print the quick summary. This is always shown regardless of mode.
 
 ```
@@ -168,12 +172,6 @@ Problematic Pods:
     <pod-name>  <status>  <restarts>
   redhat-ods-monitoring:
     <pod-name>  <status>  <restarts>
-```
-
-Get the console URL:
-
-```bash
-oc whoami --show-console
 ```
 
 If `FULL_MODE` is `false`, stop here.
@@ -319,15 +317,25 @@ RHOAI CRDs:
 
 ### Step 13: Recent Events and Issues Summary (--full only)
 
-Check for recent warning events in RHOAI namespaces:
+Check for recent warning events in RHOAI namespaces. Get the total count first so the tailed output isn't mistaken for the complete picture:
+
+```bash
+oc get events -n redhat-ods-applications --field-selector type=Warning --no-headers 2>/dev/null | wc -l
+```
 
 ```bash
 oc get events -n redhat-ods-applications --sort-by='.lastTimestamp' --field-selector type=Warning 2>/dev/null | tail -10
 ```
 
 ```bash
+oc get events -n redhat-ods-operator --field-selector type=Warning --no-headers 2>/dev/null | wc -l
+```
+
+```bash
 oc get events -n redhat-ods-operator --sort-by='.lastTimestamp' --field-selector type=Warning 2>/dev/null | tail -10
 ```
+
+When reporting, show both: "showing last 10 of `<total>` warning events" — a high total with only a few distinct messages in the tail can still indicate a persistent underlying issue.
 
 Compile an issues summary. Analyze all collected data and list any problems found:
 

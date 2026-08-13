@@ -121,17 +121,22 @@ ls -d ~/olminstall/install-operator.sh 2>/dev/null
 ls -d /tmp/olminstall/install-operator.sh 2>/dev/null
 ```
 
-If none found, attempt clone:
+If none found, check for a user-configured clone URL (olminstall is an internal Red Hat repo — its URL is never hardcoded here, only sourced from the user's own environment):
 
 ```bash
-git clone https://gitlab.cee.redhat.com/data-hub/olminstall.git /tmp/olminstall
+echo "${OLMINSTALL_REPO_URL:-unset}"
 ```
 
-If clone fails, ask user with `AskUserQuestion`:
+If set, attempt clone:
+
+```bash
+git clone "$OLMINSTALL_REPO_URL" /tmp/olminstall
+```
+
+If unset or the clone fails, ask user with `AskUserQuestion`:
 ```
 Could not locate or clone the olminstall repo.
-Please provide the full path to your local olminstall directory.
-(Clone from: https://gitlab.cee.redhat.com/data-hub/olminstall -- VPN required)
+Please provide either the full path to your local olminstall directory, or set OLMINSTALL_REPO_URL to its clone URL (internal — VPN required) and retry.
 ```
 
 Validate the required files exist:
@@ -176,7 +181,7 @@ cd <OLMINSTALL_PATH>
 Build the positional arguments for the script. The script takes: `OPERATOR_NAME [CHANNEL] [SOURCE] [VERSION]`. All positional, not flags.
 
 - If only `OPERATOR_NAME` is set (no overrides), run with just the name.
-- If `CHANNEL` is set, it becomes the second positional arg. If `SOURCE` or `VERSION` are also set, they follow in order. If `CHANNEL` is empty but `SOURCE` or `VERSION` are set, you must still pass the default channel as the second arg to maintain positional ordering.
+- Otherwise, find the rightmost flag the user actually set (CHANNEL, SOURCE, or VERSION). Every positional slot between `OPERATOR_NAME` and that rightmost set flag must be filled — pad each empty slot with its default from the install YAML, not just the immediately-next one. For example, `--version 1.35.0` alone means VERSION (4th positional) is set but CHANNEL (2nd) and SOURCE (3rd) are both empty and both need padding: `install-operator.sh <NAME> <default-channel> <default-source> 1.35.0`.
 
 To discover the default channel and source when needed for positional padding:
 
@@ -194,7 +199,7 @@ Run the install:
 bash install-operator.sh <OPERATOR_NAME> [<CHANNEL>] [<SOURCE>] [<VERSION>]
 ```
 
-Set timeout to 600000ms (10 minutes). The script handles marketplace cleanup, applies the subscription YAML, waits for the InstallPlan, approves it, waits for the CSV, and runs any post-install hooks.
+Run this in the background (`run_in_background: true`) rather than a synchronous timeout — the Bash tool's foreground timeout caps at 600000ms (10 minutes), and this script's own documented worst case (InstallPlan wait + CSV wait + rhcl/authorino dependency wait + post-install hooks, see Learned Lessons) can exceed that. Wait for the background completion notification, then check the exit status before moving to Step 6. The script handles marketplace cleanup, applies the subscription YAML, waits for the InstallPlan, approves it, waits for the CSV, and runs any post-install hooks.
 
 If the script exits non-zero, capture the output and report the error. Common failures:
 - InstallPlan not found within 100 seconds -- CatalogSource may be missing or operator not available in the channel.
@@ -285,7 +290,7 @@ Troubleshooting:
 - Do not proceed if `oc whoami` fails
 - Do not assume the olminstall repo is already cloned -- always search then fall back to clone
 - Do not skip the `cd` into the olminstall directory before running the script
-- Do not set a timeout shorter than 600000ms (10 minutes) -- operator installs with Manual approval can take several minutes
+- Do not run the install as a synchronous foreground call with a large timeout -- the Bash tool caps foreground timeouts at 600000ms (10 minutes) and Manual-approval installs (especially rhcl-operator + authorino) can exceed that; use `run_in_background: true` instead
 - Do not override mariadb-operator's version without warning the user about mirrored image dependencies
 - Do not check the wrong namespace for the CSV -- use the namespace mapping table in Step 6
 - Do not run the script with flag-style arguments (`--channel`) -- it only accepts positional arguments
