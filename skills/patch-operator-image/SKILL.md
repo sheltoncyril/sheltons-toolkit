@@ -112,13 +112,25 @@ If either fails, report the error and stop.
 
 ### Step 1.5: Verify Image Exists
 
-Before patching, verify the image is actually available on the registry:
+Before patching, verify the image is actually available on the registry. `--filter-by-os` takes a Go-style GOARCH value, which is not the same string as the tag-suffix `--arch` value from Step 0/0.5 — map it first:
+
+| `--arch` value | GOARCH for `--filter-by-os` |
+|----------------|------------------------------|
+| `x86-64` (default) | `amd64` |
+| `aarch64` | `arm64` |
+| `s390x` | `s390x` |
 
 ```bash
-oc image info <IMAGE_URI> --filter-by-os=linux/amd64 2>&1 | head -5
+oc image info <IMAGE_URI> --filter-by-os=linux/<GOARCH> 2>&1 | tee /tmp/image-info-check.log | head -20
 ```
 
-If the output contains "manifest unknown", "unauthorized", or "not found", the image does not exist. Report:
+Search the full output (not just the truncated display) for failure markers:
+
+```bash
+grep -qE "manifest unknown|unauthorized|not found" /tmp/image-info-check.log
+```
+
+If that grep matches, the image does not exist. Report:
 
 ```
 ERROR: Image not found on registry.
@@ -146,6 +158,14 @@ Matched: <description>
 ```
 
 ### Step 3: Save Current State
+
+Check for a leftover backup from an unresolved prior run before overwriting it:
+
+```bash
+test -f /tmp/sheltons-toolkit-operator-patch-backup.json && cat /tmp/sheltons-toolkit-operator-patch-backup.json
+```
+
+If it exists, warn the user that a previous patch may not have been reverted (show its `new_image_uri`/`timestamp`) and ask via `AskUserQuestion` whether to overwrite it or stop so they can revert the old patch first.
 
 Read current values before patching.
 
@@ -289,7 +309,7 @@ These are hard-won lessons from real cluster testing sessions.
 
 **Deployment name is not obvious.** The deployment is `trustyai-service-operator-controller-manager`, not `trustyai-service-operator`. The container inside it is called `manager`.
 
-**`opendatahub.io/managed` may already be `"false"`.** On some clusters (e.g., hermetic testing environments), the annotation and label are already set to `"false"`. The `--overwrite` flag on `oc annotate` handles this idempotently.
+**`opendatahub.io/managed` may already be `"false"`.** On some clusters (e.g., hermetic testing environments), the annotation is already set to `"false"`. The `--overwrite` flag on `oc annotate` handles this idempotently.
 
 **ConfigMap and deployment env vars can diverge.** The deployment has `RELATED_IMAGE_*` env vars and the ConfigMap `trustyai-service-operator-config` has its own keys. They often hold different values (e.g., env var may have a PR pipeline tag while ConfigMap has the registry.redhat.io SHA256 digest). Both must be patched for the operator to use the candidate image when spawning sub-components.
 

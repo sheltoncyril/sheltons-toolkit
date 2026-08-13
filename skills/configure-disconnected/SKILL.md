@@ -97,6 +97,8 @@ for candidate in "$HOME/Desktop/Work/olminstall" "$HOME/olminstall" "$(dirname "
 done
 ```
 
+Store the matched `<candidate>` directory as `OLMINSTALL_PATH` — Step 6 refers to it as `<path-to-olminstall>`.
+
 If not found in any location, report:
 
 ```
@@ -150,15 +152,23 @@ If the script prints "Skipping rhcl-operator disconnected configuration", treat 
 
 After the script completes successfully, verify the changes took effect.
 
-**7a. Subscription env vars:**
+**7a. Resolve the Subscription's namespace (`SUB_NS`).** Do not assume it equals the CSV namespace from Step 3 — Subscriptions aren't copied across namespaces the way CSVs are, so the Subscription named `rhcl-operator` lives in exactly one namespace. Find it directly:
+
+```bash
+oc get subscription -A --no-headers 2>/dev/null | grep rhcl-operator
+```
+
+Take the namespace (first column) as `SUB_NS`.
+
+**7b. Subscription env vars:**
 
 ```bash
 oc get subscription rhcl-operator -n <SUB_NS> -o jsonpath='{.spec.config.env}' | jq .
 ```
 
-Confirm that `RELATED_IMAGE_WASMSHIM` contains the mirror registry URL and a `sha256:` digest, and that `PROTECTED_REGISTRY` matches the mirror registry URL.
+The script's own 10s sleep (see Learned Lessons) is a fixed delay, not a readiness check — on a loaded cluster it can be too short for OLM to have propagated the env vars yet. If `RELATED_IMAGE_WASMSHIM` doesn't yet contain the mirror registry URL and a `sha256:` digest, or `PROTECTED_REGISTRY` doesn't match, retry this command a few times (a few seconds apart, up to ~30s total) before treating it as a real failure.
 
-**7b. Pull secret exists:**
+**7c. Pull secret exists:**
 
 ```bash
 oc get secret wasm-plugin-pull-secret -n openshift-ingress -o name
@@ -166,7 +176,7 @@ oc get secret wasm-plugin-pull-secret -n openshift-ingress -o name
 
 Confirm the secret exists in the `openshift-ingress` namespace.
 
-**7c. Operator pod status:**
+**7d. Operator pod status:**
 
 ```bash
 oc get pods -n <SUB_NS> -l app.kubernetes.io/name=rhcl-operator --no-headers

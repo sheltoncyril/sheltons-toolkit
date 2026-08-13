@@ -79,17 +79,28 @@ ls -d ~/olminstall/cleanup.sh 2>/dev/null
 ls -d /tmp/olminstall/cleanup.sh 2>/dev/null
 ```
 
-If none found, attempt clone:
+If none found, check for a user-configured clone URL (olminstall is an internal Red Hat repo — its URL is never hardcoded here, only sourced from the user's own environment):
 
 ```bash
-git clone https://gitlab.cee.redhat.com/data-hub/olminstall.git /tmp/olminstall
+echo "${OLMINSTALL_REPO_URL:-unset}"
 ```
 
-If clone fails, ask user with `AskUserQuestion`:
+If `/tmp/olminstall` exists but wasn't matched above (stale/partial clone from a prior run), pull instead of cloning:
+
+```bash
+test -d /tmp/olminstall/.git && git -C /tmp/olminstall pull
+```
+
+Otherwise, if set, attempt clone:
+
+```bash
+git clone "$OLMINSTALL_REPO_URL" /tmp/olminstall
+```
+
+If unset or the clone fails, ask user with `AskUserQuestion`:
 ```
 Could not locate or clone the olminstall repo.
-Please provide the full path to your local olminstall directory.
-(Clone from: https://gitlab.cee.redhat.com/data-hub/olminstall — VPN required)
+Please provide either the full path to your local olminstall directory, or set OLMINSTALL_REPO_URL to its clone URL (internal — VPN required) and retry.
 ```
 
 Validate the required script exists:
@@ -160,7 +171,7 @@ cd <OLMINSTALL_PATH>
 bash cleanup.sh -t operator -g
 ```
 
-Set timeout to 600000ms (10 minutes).
+Run this in the background (`run_in_background: true`) rather than a synchronous timeout — cleanup is documented to take 10-15 minutes (see Learned Lessons), which can exceed the Bash tool's 600000ms (10-minute) foreground cap. Wait for the background completion notification before moving to Step 6.
 
 **Nuke mode:**
 
@@ -182,7 +193,7 @@ If count > 0, safe to run:
 bash complete-cleanup.sh --yes
 ```
 
-Set timeout to 600000ms (10 minutes).
+Run this in the background (`run_in_background: true`) — same reasoning as standard mode above.
 
 ### Step 6: Verify Cleanup
 
@@ -235,9 +246,9 @@ For nuke mode, add:
   Dependency CSVs:   <none / N remaining>
 ```
 
-If any issues remain, suggest:
+If any issues remain, suggest, as a **last resort only** — this bypasses the owning controller's cleanup and can orphan cluster resources (ServiceMeshControlPlane, Istio CRs, etc.) behind the finalizer. Check `oc get namespace <ns> -o jsonpath='{.spec.finalizers}'` and the owning operator's logs first to understand why it's stuck:
 ```
-For stuck Terminating namespaces, try:
+For stuck Terminating namespaces (after checking why the finalizer isn't clearing):
   oc get namespace <ns> -o json | jq '.spec.finalizers = []' | oc replace --raw "/api/v1/namespaces/<ns>/finalize" -f -
 ```
 

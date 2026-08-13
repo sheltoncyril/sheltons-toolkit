@@ -81,11 +81,13 @@ ls -d <component-repo-path>/config/overlays/
 
 If it fails, report the error and stop.
 
-Read `<skill-dir>/resources/component-map.json`. Detect which component this repo is by checking if any known component's overlay directory structure exists. For now, check for TrustyAI:
+Read `<skill-dir>/resources/component-map.json`. For each known component, check whether its `detection_file` exists AND contains its `detection_pattern`. For TrustyAI:
 
 ```bash
-ls <component-repo-path>/config/overlays/odh/params.env
+grep -q "trustyaiServiceImage" <component-repo-path>/config/overlays/odh/params.env
 ```
+
+A bare file-existence check is not enough — any repo with a `params.env` at that path would otherwise be misidentified as TrustyAI. The pattern grep confirms it's actually the right component.
 
 If no component matches, report:
 
@@ -240,13 +242,21 @@ oc get csv <CSV_NAME> -n <operator-namespace> -o jsonpath='{.spec.install.spec.d
 
 If the output contains `/opt/manifests/<component>`, the mount is already applied. Report this and skip the patch.
 
-If the mount does NOT exist, apply the JSON patch:
+If the mount does NOT exist, first determine `fsGroup` dynamically — do not hardcode it, the operator namespace's allowed supplemental-group range varies per cluster (and a fixed value is rejected outright under the `restricted-v2` SCC on ROSA):
+
+```bash
+oc get namespace <operator-namespace> -o jsonpath='{.metadata.annotations.openshift\.io/sa\.scc\.supplemental-groups}'
+```
+
+This returns something like `1000700000/10000`. Take the first number before the `/` as `<FSGROUP>`. If the annotation is empty or missing, fall back to `1001`.
+
+Apply the JSON patch:
 
 ```bash
 oc patch csv <CSV_NAME> -n <operator-namespace> --type json -p '[
   {"op":"replace","path":"/spec/install/spec/deployments/0/spec/replicas","value":1},
   {"op":"replace","path":"/spec/install/spec/deployments/0/spec/strategy","value":{"type":"Recreate"}},
-  {"op":"add","path":"/spec/install/spec/deployments/0/spec/template/spec/securityContext","value":{"fsGroup":1001}},
+  {"op":"add","path":"/spec/install/spec/deployments/0/spec/template/spec/securityContext","value":{"fsGroup":<FSGROUP>}},
   {"op":"add","path":"/spec/install/spec/deployments/0/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"<component>-manifests","mountPath":"/opt/manifests/<component>"}},
   {"op":"add","path":"/spec/install/spec/deployments/0/spec/template/spec/volumes/-","value":{"name":"<component>-manifests","persistentVolumeClaim":{"claimName":"<component>-manifests"}}}
 ]'
@@ -254,7 +264,15 @@ oc patch csv <CSV_NAME> -n <operator-namespace> --type json -p '[
 
 ### Step 8: Wait for Operator Pod
 
-Wait for the operator pod to be ready after the CSV patch triggers a rollout:
+The CSV patch triggers OLM to update the Deployment, but that update isn't instant — `oc wait` run immediately after the patch can match the still-running pre-patch pod and report false-positive readiness. First confirm the Deployment actually picked up the new spec:
+
+```bash
+oc get deployment <operator_deployment> -n <operator-namespace> -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[*].mountPath}'
+```
+
+Poll (a few seconds apart, up to ~30s) until this includes `/opt/manifests/<component>`. If it never updates, OLM cached the old spec — see the "OLM caches the deployment spec" note below.
+
+Then wait for the new pod to be ready:
 
 ```bash
 oc wait --for=condition=Ready pod -l <operator-label> -n <operator-namespace> --timeout=120s
@@ -411,7 +429,7 @@ These are hard-won lessons from real cluster testing sessions.
 
 **PVC is RWO.** The PVC uses `ReadWriteOnce` access mode. The operator must run with `replicas=1` and a `Recreate` strategy (not `RollingUpdate`) to avoid two pods contending for the same PVC. The CSV patch sets both.
 
-**fsGroup=1001 is required for oc cp.** Without `securityContext.fsGroup=1001` on the pod spec, `oc cp` into the PVC mount will fail with permission denied errors. The CSV patch sets this.
+**fsGroup is required for oc cp.** Without `securityContext.fsGroup` set on the pod spec, `oc cp` into the PVC mount will fail with permission denied errors. The CSV patch sets this, reading the value from the namespace's `sa.scc.supplemental-groups` annotation (see Step 7) rather than hardcoding it.
 
 **Operator labels differ between platforms.** For RHOAI the operator deployment label is `name=rhods-operator`. For ODH it is `name=opendatahub-operator`. Always detect and use the correct label.
 
@@ -426,8 +444,6 @@ These are hard-won lessons from real cluster testing sessions.
 **oc cp requires the namespace/pod format.** The `oc cp` command requires the format `<namespace>/<pod-name>:<path>`, not just `<pod-name>:<path>`.
 
 **Manifest approach patches the ConfigMap but NOT the deployment env vars.** The ODH/RHOAI operator injects `RELATED_IMAGE_*` env vars from its own CSV, not from the component's params.env. The params.env generates the ConfigMap via kustomize `configMapGenerator`, but the deployment env vars are set by the ODH operator from the CSV's deployment spec. To fully swap a component image, you need BOTH this skill (for ConfigMap + CRDs + RBAC) AND `patch-operator-image` (for the deployment env var). Or patch the RHOAI CSV env vars directly.
-
-**fsGroup in the CSV patch can break on ROSA/restricted SCCs.** The hardcoded `fsGroup: 1001` is rejected by `restricted-v2` SCC. Instead, read the namespace's allowed supplemental group range from `openshift.io/sa.scc.supplemental-groups` annotation and use the first value in that range. Or omit fsGroup entirely if the SA already has write access to the PVC.
 
 **OLM caches the deployment spec.** After patching the CSV, OLM may not immediately update the deployment's ReplicaSet. If the pod fails to start, delete the stale RS to force recreation. Or patch the deployment directly as a fallback.
 

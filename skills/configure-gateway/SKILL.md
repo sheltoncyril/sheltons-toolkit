@@ -80,7 +80,7 @@ oc whoami --show-server
 ```
 
 ```bash
-oc version
+oc version -o json | python3 -c "import json,sys; print(json.load(sys.stdin).get('openshiftVersion', 'unknown'))"
 ```
 
 Report:
@@ -150,17 +150,22 @@ ls -d ~/olminstall/configure-maas-gateway.sh 2>/dev/null
 ls -d /tmp/olminstall/configure-maas-gateway.sh 2>/dev/null
 ```
 
-If none found, attempt clone:
+If none found, check for a user-configured clone URL (olminstall is an internal Red Hat repo — its URL is never hardcoded here, only sourced from the user's own environment):
 
 ```bash
-git clone https://gitlab.cee.redhat.com/data-hub/olminstall.git /tmp/olminstall
+echo "${OLMINSTALL_REPO_URL:-unset}"
 ```
 
-If clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
+If set, attempt clone:
+
+```bash
+git clone "$OLMINSTALL_REPO_URL" /tmp/olminstall
+```
+
+If unset or the clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
 ```
 Could not locate or clone the olminstall repo.
-Please provide the full path to your local olminstall directory.
-(Clone from: https://gitlab.cee.redhat.com/data-hub/olminstall -- VPN required)
+Please provide either the full path to your local olminstall directory, or set OLMINSTALL_REPO_URL to its clone URL (internal — VPN required) and retry.
 ```
 
 After obtaining a path, validate it has the required scripts based on the component:
@@ -246,6 +251,12 @@ oc get configmap maas-default-gateway-config -n openshift-ingress -o name
 oc get route maas-default-gateway -n openshift-ingress -o jsonpath='{.spec.host}'
 ```
 
+Also confirm the ClusterIP service (disconnected mode replaces the LoadBalancer service with this one):
+
+```bash
+oc get service maas-default-gateway-openshift-default -n openshift-ingress -o jsonpath='{.spec.type}'
+```
+
 **For `llmd`:**
 
 ```bash
@@ -264,6 +275,12 @@ oc get configmap openshift-ai-inference-config -n openshift-ingress -o name
 
 ```bash
 oc get route openshift-ai-inference -n openshift-ingress -o jsonpath='{.spec.host}'
+```
+
+Also confirm the ClusterIP service (disconnected mode replaces the LoadBalancer service with this one):
+
+```bash
+oc get service openshift-ai-inference-openshift-default -n openshift-ingress -o jsonpath='{.spec.type}'
 ```
 
 **For `postgres`:**

@@ -135,7 +135,7 @@ If provided, validate: `searchJiraIssuesUsingJql` with JQL `project = <KEY> AND 
 > "Which GitLab repositories should be searched?
 >
 > Enter comma-separated `host:org/repo` pairs.
-> Example: `gitlab.cee.redhat.com:ai/trustyai-service`
+> Example: `<your-gitlab-host>:org/repo`
 >
 > Type 'skip' to disable GitLab PR checking."
 

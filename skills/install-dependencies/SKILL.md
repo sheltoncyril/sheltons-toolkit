@@ -161,17 +161,22 @@ ls -d ~/olminstall/setup-dependencies.sh 2>/dev/null
 ls -d /tmp/olminstall/setup-dependencies.sh 2>/dev/null
 ```
 
-If none found, attempt clone:
+If none found, check for a user-configured clone URL (olminstall is an internal Red Hat repo — its URL is never hardcoded here, only sourced from the user's own environment):
 
 ```bash
-git clone https://gitlab.cee.redhat.com/data-hub/olminstall.git /tmp/olminstall
+echo "${OLMINSTALL_REPO_URL:-unset}"
 ```
 
-If clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
+If set, attempt clone:
+
+```bash
+git clone "$OLMINSTALL_REPO_URL" /tmp/olminstall
+```
+
+If unset or the clone fails (no VPN, no auth), ask user with `AskUserQuestion`:
 ```
 Could not locate or clone the olminstall repo.
-Please provide the full path to your local olminstall directory.
-(Clone from: https://gitlab.cee.redhat.com/data-hub/olminstall — VPN required)
+Please provide either the full path to your local olminstall directory, or set OLMINSTALL_REPO_URL to its clone URL (internal — VPN required) and retry.
 ```
 
 After obtaining a path, validate it has the required scripts. For GitOps mode:
@@ -272,6 +277,14 @@ Change to the olminstall directory (required -- scripts use relative paths):
 cd <OLMINSTALL_PATH>
 ```
 
+If `LOCAL=true`, confirm `odh-gitops` actually exists before passing `-l` -- the script fails immediately otherwise:
+
+```bash
+test -d <OLMINSTALL_PATH>/odh-gitops
+```
+
+If it does not exist, stop and report: "`--local` was requested but `<OLMINSTALL_PATH>/odh-gitops` does not exist. Clone/place it there first, or drop `--local` to let the script clone it."
+
 **GitOps mode:**
 
 Build the command flags:
@@ -285,7 +298,7 @@ Build the command flags:
 bash setup-dependencies.sh <flags>
 ```
 
-Set timeout to 600000ms (10 minutes).
+Run this in the background (`run_in_background: true`) rather than a synchronous timeout -- installing 16 dependency operators sequentially (some with Manual InstallPlan approval taking 2-5 minutes each, see Learned Lessons) can exceed the Bash tool's 600000ms (10-minute) foreground cap. Wait for the background completion notification before moving to Step 5.
 
 **Helm mode:**
 
@@ -302,7 +315,7 @@ Build the command flags:
 bash setup-helm.sh -o <OPERATOR_TYPE> <flags>
 ```
 
-Set timeout to 600000ms (10 minutes).
+Run this in the background (`run_in_background: true`) -- same reasoning as GitOps mode above.
 
 If the script exits with a non-zero code, capture stderr output and report the error. Do not retry automatically. Present the error to the user and suggest checking:
 - Network connectivity to the GitOps repo
@@ -438,7 +451,7 @@ These are hard-won lessons from real cluster testing sessions.
 - Do not combine shell commands with `&&`, `;`, or `||`
 - Do not proceed past preflight if `oc whoami` fails
 - Do not assume the olminstall repo is already cloned -- always search and fall back to cloning
-- Do not set a timeout shorter than 600000ms -- dependency installation routinely takes 5-10 minutes
+- Do not run the install script as a synchronous foreground call -- dependency installation of 16 operators can exceed the Bash tool's 600000ms (10-minute) foreground cap; use `run_in_background: true`
 - Do not skip the Authorino TLS verification -- if it fails, RHOAI components that depend on Authorino will not work
 - Do not use `-l` flag unless you have confirmed `odh-gitops` exists in the olminstall directory
 - Do not retry the script automatically on failure -- present the error to the user for investigation
