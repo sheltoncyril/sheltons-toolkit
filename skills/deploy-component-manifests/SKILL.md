@@ -254,11 +254,11 @@ Apply the JSON patch:
 
 ```bash
 oc patch csv <CSV_NAME> -n <operator-namespace> --type json -p '[
-  {"op":"replace","path":"/spec/install/spec/deployments/0/spec/replicas","value":1},
-  {"op":"replace","path":"/spec/install/spec/deployments/0/spec/strategy","value":{"type":"Recreate"}},
-  {"op":"add","path":"/spec/install/spec/deployments/0/spec/template/spec/securityContext","value":{"fsGroup":<FSGROUP>}},
-  {"op":"add","path":"/spec/install/spec/deployments/0/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"<component>-manifests","mountPath":"/opt/manifests/<component>"}},
-  {"op":"add","path":"/spec/install/spec/deployments/0/spec/template/spec/volumes/-","value":{"name":"<component>-manifests","persistentVolumeClaim":{"claimName":"<component>-manifests"}}}
+  {"op": "replace", "path": "/spec/install/spec/deployments/0/spec/replicas", "value": 1},
+  {"op": "replace", "path": "/spec/install/spec/deployments/0/spec/strategy", "value": {"type": "Recreate"}},
+  {"op": "add", "path": "/spec/install/spec/deployments/0/spec/template/spec/securityContext", "value": {"fsGroup": <FSGROUP>}},
+  {"op": "add", "path": "/spec/install/spec/deployments/0/spec/template/spec/containers/0/volumeMounts/-", "value": {"name": "<component>-manifests", "mountPath": "/opt/manifests/<component>"}},
+  {"op": "add", "path": "/spec/install/spec/deployments/0/spec/template/spec/volumes/-", "value": {"name": "<component>-manifests", "persistentVolumeClaim": {"claimName": "<component>-manifests"}}}
 ]'
 ```
 
@@ -359,12 +359,12 @@ oc get csv <CSV_NAME> -n <operator-namespace> -o jsonpath='{.spec.install.spec.d
 
 Find the index of the volumeMount with `mountPath` matching `/opt/manifests/<component>`. Similarly find the volume index.
 
-Apply a JSON patch to remove them (use `"op":"remove"` with the correct indices):
+Apply a JSON patch to remove them (use `"op": "remove"` with the correct indices):
 
 ```bash
 oc patch csv <CSV_NAME> -n <operator-namespace> --type json -p '[
-  {"op":"remove","path":"/spec/install/spec/deployments/0/spec/template/spec/containers/0/volumeMounts/<MOUNT_INDEX>"},
-  {"op":"remove","path":"/spec/install/spec/deployments/0/spec/template/spec/volumes/<VOLUME_INDEX>"}
+  {"op": "remove", "path": "/spec/install/spec/deployments/0/spec/template/spec/containers/0/volumeMounts/<MOUNT_INDEX>"},
+  {"op": "remove", "path": "/spec/install/spec/deployments/0/spec/template/spec/volumes/<VOLUME_INDEX>"}
 ]'
 ```
 

@@ -1,5 +1,7 @@
 ---
+name: review
 description: Multi-persona PR review. Spawns 3 parallel agents (chill, grumpy, unhinged) that each review the PR from a different angle. Findings are merged with confidence scoring — issues flagged by 2+ personas are high-confidence. Use for thorough PR reviews with built-in false-positive filtering.
+allowed-tools: Bash Read Write Agent
 ---
 
 # Review
