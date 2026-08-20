@@ -10,7 +10,7 @@ description: >
   Trigger phrases include: "deploy manifests", "swap manifests", "deploy component",
   "use custom manifests", "manifest approach", "OLM install", "revert manifests",
   "component dev install".
-allowed-tools: Bash Read Write AskUserQuestion
+allowed-tools: Bash Read Write Edit AskUserQuestion
 ---
 
 # Deploy Component Manifests
