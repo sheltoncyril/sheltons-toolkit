@@ -1,0 +1,6 @@
+# Local Claude Code state (worktrees, local settings)
+.claude/
+
+# Python
+__pycache__/
+*.pyc

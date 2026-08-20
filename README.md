@@ -26,6 +26,7 @@ A Claude Code plugin with opinionated skills for code review, Jira hygiene, and 
 | `patch-operator-image` | `/sheltons-toolkit:patch-operator-image <image\|revert>` | Patch TrustyAI operator with a candidate image (auto-revert) |
 | `deploy-component-manifests` | `/sheltons-toolkit:deploy-component-manifests <repo-path>` | Deploy custom component manifests into OLM operator |
 | `regression-test-runner` | `/sheltons-toolkit:regression-test-runner <component> [flags]` | End-to-end regression tests with failure analysis and Jira reporting |
+| `jenkins-ci-triage` | `/sheltons-toolkit:jenkins-ci-triage <build-url(s)>` | Fetch and classify RHOAI/ODH Jenkins CI failures (known/version-mismatch/cascading-infra/genuine), cross-reference fixes for backport |
 
 ## How `review` works
 
@@ -95,6 +96,17 @@ End-to-end regression testing orchestrator for TrustyAI/AI Safety components:
 6. Updates Jira with a structured results table
 7. Transitions Jira to Resolved if no product bugs found
 8. Reverts operator image if it was patched
+
+## How `jenkins-ci-triage` works
+
+Fetches an internal RHOAI/ODH Jenkins CI build (`rhoai-smoke`, `rhoai-sanity`, `odh-tier1`, etc.) and classifies every failure instead of leaving you to eyeball a wall of red:
+
+1. Fetches build params + `testReport` via the Jenkins REST API (credentials from env vars or asked interactively — never hardcoded)
+2. Parses `COMPONENTS_TESTS_CONFIG` to know which branch/image each component actually tested
+3. Buckets each failure: **version-mismatch** (component pinned to `main`/`latest`, not the release under test), **cascading infra** (shared cluster/operator health check failing across many unrelated suites — finds the one real root cause), **persistent known issue** (via `age`/`failedSince`), or **genuine new regression**
+4. For real test bugs, checks `opendatahub-tests` git history for an existing fix on another branch and offers to trigger the cherry-pick bot backport (`/cherry-pick <branch>` comment on the original PR) — with confirmation before posting
+
+See `skills/jenkins-ci-triage/resources/` for the full job hierarchy and pipeline internals reference.
 
 **Components:** `nemo_guardrails`, `trustyai_service`, `trustyai_operator`, `lm_eval`, `guardrails`, `evalhub`, `component_health`
 

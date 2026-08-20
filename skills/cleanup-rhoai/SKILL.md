@@ -117,6 +117,28 @@ ls <path>/complete-cleanup.sh
 
 Store `OLMINSTALL_PATH`.
 
+**Keep the repo current.** If `OLMINSTALL_PATH` is a git clone, the cleanup scripts (`cleanup.sh`, `complete-cleanup.sh`, `remove-stuck-crds.sh`) get bug fixes over time — a stale local clone can carry the very bugs noted in "Learned from Trial Runs". Check whether it's a git working copy:
+
+```bash
+test -d <OLMINSTALL_PATH>/.git && echo git || echo not-git
+```
+
+If it is a git clone, and the `OLMINSTALL_AUTO_UPDATE` preference is not already set, ask with `AskUserQuestion`:
+```
+The olminstall repo at <OLMINSTALL_PATH> may be out of date. Update it before running cleanup?
+```
+Options:
+- `Update` — pull once now
+- `Always update` — pull now and on every future run without asking
+- `No` — use the repo as-is
+
+Honor the answer:
+- `Update` or `Always update`: `git -C <OLMINSTALL_PATH> pull`
+- `Always update`: also record the preference so future runs skip the prompt — set `OLMINSTALL_AUTO_UPDATE=1` (e.g. suggest the user add it to their shell profile) and treat it as "always pull" whenever it is set on subsequent runs.
+- `No`: proceed without pulling.
+
+If `OLMINSTALL_AUTO_UPDATE` is already set (`echo "${OLMINSTALL_AUTO_UPDATE:-unset}"` is not `unset`), skip the question and just run `git -C <OLMINSTALL_PATH> pull`. Never pull a repo that isn't a git clone, and never pull a path the user just typed in as a one-off without asking.
+
 ### Step 4: User Confirmation
 
 Use `AskUserQuestion` to confirm.
@@ -225,6 +247,12 @@ oc get csv -A --no-headers 2>/dev/null | grep -iE '(servicemesh|serverless|autho
 oc get namespaces --no-headers 2>/dev/null | grep Terminating
 ```
 
+Also check for leftover RHOAI CRDs (these are the usual reason a namespace hangs in `Terminating` — the namespace can't finalize while stuck CRDs or their CR instances linger):
+
+```bash
+oc get crd --no-headers 2>/dev/null | grep -iE 'opendatahub|datasciencecluster|datascienceinitialization|trustyai|kserve|inferenceservice|servingruntime|featurestore'
+```
+
 ### Step 7: Print Summary
 
 ```
@@ -246,9 +274,27 @@ For nuke mode, add:
   Dependency CSVs:   <none / N remaining>
 ```
 
-If any issues remain, suggest, as a **last resort only** — this bypasses the owning controller's cleanup and can orphan cluster resources (ServiceMeshControlPlane, Istio CRs, etc.) behind the finalizer. Check `oc get namespace <ns> -o jsonpath='{.spec.finalizers}'` and the owning operator's logs first to understand why it's stuck:
+If stuck `Terminating` namespaces or leftover RHOAI CRDs remain, try the olminstall helper **first** — it removes finalizers from stuck CRDs and their remaining CR instances, which is what usually blocks the namespace from finalizing. It must run with `-y` (without it the script prompts and hangs the Bash tool), and from the olminstall directory:
+
+```bash
+cd <OLMINSTALL_PATH>
 ```
-For stuck Terminating namespaces (after checking why the finalizer isn't clearing):
+
+```bash
+bash remove-stuck-crds.sh -y
+```
+
+To scope it to a specific set of CRDs (e.g. only ServiceMesh leftovers), add `--pattern`:
+
+```bash
+bash remove-stuck-crds.sh -y --pattern 'maistra|servicemesh'
+```
+
+Re-check the namespaces afterward — clearing the stuck CRDs commonly lets a hung namespace finish terminating on its own.
+
+Only if a namespace is *still* stuck after that, suggest the raw finalize edit as a **last resort** — it bypasses the owning controller's cleanup and can orphan cluster resources (ServiceMeshControlPlane, Istio CRs, etc.) behind the finalizer. Check `oc get namespace <ns> -o jsonpath='{.spec.finalizers}'` and the owning operator's logs first to understand why it's stuck:
+```
+For stuck Terminating namespaces (after remove-stuck-crds.sh and after checking why the finalizer isn't clearing):
   oc get namespace <ns> -o json | jq '.spec.finalizers = []' | oc replace --raw "/api/v1/namespaces/<ns>/finalize" -f -
 ```
 
@@ -267,6 +313,8 @@ For stuck Terminating namespaces (after checking why the finalizer isn't clearin
 6. **Stuck namespaces in Terminating state are common after nuke.** Usually caused by finalizers on ServiceMeshControlPlane, KnativeServing, or DataScienceCluster resources. The `complete-cleanup.sh` has logic to remove finalizers, but sometimes namespaces get stuck anyway.
 
 7. **After cleanup, `redhat-ods-operator` namespace may already exist from a partial previous install.** The olminstall install scripts handle this with `--dry-run=client`.
+
+8. **`remove-stuck-crds.sh` is the right tool for namespaces stuck in `Terminating`.** A namespace usually can't finalize because a RHOAI/dependency CRD is stuck in deletion (finalizer or a lingering CR instance). This script finds those CRDs, strips finalizers from the instances and the CRD, and force-deletes them — which frees the namespace. Prefer it over the raw `oc replace --raw .../finalize` hack, which only clears the namespace finalizer and can orphan the underlying resources. It requires `-y` for non-interactive use (same hang problem as `complete-cleanup.sh`), and supports `--pattern` to limit which CRDs it touches.
 
 ## Do Not
 

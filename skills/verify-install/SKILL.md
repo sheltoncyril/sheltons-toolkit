@@ -358,6 +358,7 @@ Common issue patterns to flag:
 - Required dependency operators missing (cert-manager, leader-worker-set, connectivity-link)
 - CatalogSource not in `READY` state
 - Warning events indicating persistent problems (not one-off transients)
+- DSC condition `TrustyAIReady=False` / `DeploymentsNotReady` while the TrustyAI pod is actually `Running` — a stale-reconcile case (see "Learned from Trial Runs")
 
 ## Learned from Trial Runs
 
@@ -378,6 +379,13 @@ Common issue patterns to flag:
 8. **`oc get gateway` requires the Gateway API CRD.** On clusters without the Gateway API CRD installed, this command returns an error. Handle this gracefully and report "Gateway API not available on this cluster."
 
 9. **Console URL may differ from API URL.** `oc whoami --show-console` returns the web console URL. The RHOAI dashboard route is a separate URL. Do not confuse the two.
+
+10. **TrustyAI `DeploymentsNotReady` can be a stale status, not a real failure.** The DSC (and the `trustyai` resource) can report `TrustyAIReady=False` / `DeploymentsNotReady` even though the TrustyAI pod in `redhat-ods-applications` is `Running` and healthy. This happens when the image pull secret or ServiceAccount is regenerated, causing a transient pod failure that self-heals — but `rhods-operator` never re-reconciles, so the status stays stale. To confirm: compare the DSC/`trustyai` condition against the actual pod (`oc get pods -n redhat-ods-applications | grep trustyai`). When the pod is Running but the condition is stale, this skill is read-only so **recommend** (do not run) a forced reconcile to the user:
+    ```bash
+    oc annotate trustyai default-trustyai \
+      opendatahub.io/manual-reconcile=$(date +%s) --overwrite
+    ```
+    This triggers a fresh reconcile; the controller sees the healthy deployment and flips `TrustyAIReady: True`.
 
 ## Do Not
 

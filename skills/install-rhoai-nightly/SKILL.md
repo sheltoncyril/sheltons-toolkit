@@ -195,6 +195,28 @@ If any is missing, report which file is missing and stop.
 
 Store `OLMINSTALL_PATH`.
 
+**Keep the repo current.** If `OLMINSTALL_PATH` is a git clone, `setup.sh` / `install-operator.sh` / `create-dsc.sh` get fixes over time — a stale clone can reintroduce already-fixed bugs. Check whether it's a git working copy:
+
+```bash
+test -d <OLMINSTALL_PATH>/.git && echo git || echo not-git
+```
+
+If it is a git clone, and the `OLMINSTALL_AUTO_UPDATE` preference is not already set, ask with `AskUserQuestion`:
+```
+The olminstall repo at <OLMINSTALL_PATH> may be out of date. Update it before installing?
+```
+Options:
+- `Update` — pull once now
+- `Always update` — pull now and on every future run without asking
+- `No` — use the repo as-is
+
+Honor the answer:
+- `Update` or `Always update`: `git -C <OLMINSTALL_PATH> pull`
+- `Always update`: also record the preference so future runs skip the prompt — set `OLMINSTALL_AUTO_UPDATE=1` (suggest the user add it to their shell profile) and treat it as "always pull" whenever it is set on subsequent runs.
+- `No`: proceed without pulling.
+
+If `OLMINSTALL_AUTO_UPDATE` is already set (`echo "${OLMINSTALL_AUTO_UPDATE:-unset}"` is not `unset`), skip the question and just run `git -C <OLMINSTALL_PATH> pull`. Never pull a path that isn't a git clone (e.g. a fresh `git clone` above is already current), and never pull a one-off path the user just typed without asking.
+
 ### Step 4: ROSA Pull-Secret Setup (conditional)
 
 Skip this step entirely if `IS_ROSA` is `false`.
@@ -313,7 +335,23 @@ If no CSV found yet, wait and retry, up to 20 times (10 minutes total):
 sleep 30
 ```
 
-If no CSV appears after 20 attempts, stop and report: "No rhods-operator CSV appeared after 10 minutes. Check the subscription and CatalogSource: `oc get subscription,catalogsource -n redhat-ods-operator`." Once a CSV name is found:
+If no CSV appears after 20 attempts, first check whether the subscription actually resolved an InstallPlan:
+
+```bash
+oc get subscription rhoai-operator-dev -n redhat-ods-operator -o jsonpath='{.status.state} installplan={.status.installplan.name}{"\n"}'
+```
+
+If the subscription state is not `AtLatestKnown`/`UpgradePending` and no `installplan` is set, this is almost always a channel mismatch — the catalog image doesn't publish the channel in the subscription (common with EA/nightly builds that only exist in `beta`). Inspect the available channels and patch the subscription to a real one:
+
+```bash
+oc get subscription rhoai-operator-dev -n redhat-ods-operator -o jsonpath='{.spec.channel}{"\n"}'
+```
+
+```bash
+oc patch subscription rhoai-operator-dev -n redhat-ods-operator --type merge -p '{"spec":{"channel":"<correct-channel>"}}'
+```
+
+Use the channel confirmed by the `oc image extract` inspection in Step 0 (that is authoritative for what this fragment publishes). After patching, re-enter the CSV wait loop above. If the subscription *did* resolve an InstallPlan but no CSV appeared, stop and report: "No rhods-operator CSV appeared after 10 minutes. Check the subscription and CatalogSource: `oc get subscription,catalogsource -n redhat-ods-operator`." Once a CSV name is found:
 
 ```bash
 oc wait csv <CSV_NAME> -n redhat-ods-operator --for=jsonpath='{.status.phase}'=Succeeded --timeout=300s
@@ -457,6 +495,8 @@ Dependency Operators:
 8. **`setup.sh` modifies `operator-catalogsource.yaml` in-place.** The `perl -i -pe` command replaces the image line. Safe to re-run — overwrites previous image.
 
 9. **The same version tag can map to different real versions depending on channel.** Observed on a `rhoai-3.5` fragment: `beta` resolved to `rhods-operator.3.5.0-ea.2` (early access) while `stable-3.5` resolved to `rhods-operator.3.5.0` (GA) — both channels existed in the same fragment, same image tag. Guessing `stable-X.Y` from the tag happened to be right that time, but nothing guarantees it: some fragments only carry a `beta`/`fast`/`eus-X.Y` channel for a given version, or `stable-X.Y` might not be cut yet. Always extract and check before installing.
+
+10. **A subscription that never resolves an InstallPlan is usually a channel mismatch, and is recoverable in-place.** If the CSV never appears, check `oc get subscription rhoai-operator-dev -n redhat-ods-operator -o jsonpath='{.status.state} {.status.installplan.name}'`. No installplan + a non-resolving state means the catalog image doesn't publish the subscribed channel — EA/nightly fragments frequently carry only a `beta` channel, not `stable-X.Y`. No need to tear down and re-run `setup.sh`: `oc patch subscription rhoai-operator-dev -n redhat-ods-operator --type merge -p '{"spec":{"channel":"beta"}}'` (or the real channel from the Step 0 `oc image extract`) makes OLM re-resolve and create the InstallPlan. This is why Step 0's fragment inspection is authoritative — it tells you which channel actually exists before the mismatch happens.
 
 ## Do Not
 
