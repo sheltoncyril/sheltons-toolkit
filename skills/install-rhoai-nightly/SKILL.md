@@ -195,10 +195,10 @@ If any is missing, report which file is missing and stop.
 
 Store `OLMINSTALL_PATH`.
 
-**Keep the repo current.** If `OLMINSTALL_PATH` is a git clone, `setup.sh` / `install-operator.sh` / `create-dsc.sh` get fixes over time — a stale clone can reintroduce already-fixed bugs. Check whether it's a git working copy:
+**Keep the repo current.** If `OLMINSTALL_PATH` is a git clone, `setup.sh` / `install-operator.sh` / `create-dsc.sh` get fixes over time — a stale clone can reintroduce already-fixed bugs. Check whether it's a git working copy (non-empty output means it is a git clone):
 
 ```bash
-test -d <OLMINSTALL_PATH>/.git && echo git || echo not-git
+ls -d <OLMINSTALL_PATH>/.git 2>/dev/null
 ```
 
 If it is a git clone, and the `OLMINSTALL_AUTO_UPDATE` preference is not already set, ask with `AskUserQuestion`:

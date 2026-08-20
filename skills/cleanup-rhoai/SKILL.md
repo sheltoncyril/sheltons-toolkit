@@ -85,10 +85,16 @@ If none found, check for a user-configured clone URL (olminstall is an internal 
 echo "${OLMINSTALL_REPO_URL:-unset}"
 ```
 
-If `/tmp/olminstall` exists but wasn't matched above (stale/partial clone from a prior run), pull instead of cloning:
+If `/tmp/olminstall` exists but wasn't matched above (stale/partial clone from a prior run), check whether it is a git clone (non-empty output means it is):
 
 ```bash
-test -d /tmp/olminstall/.git && git -C /tmp/olminstall pull
+ls -d /tmp/olminstall/.git 2>/dev/null
+```
+
+If it is a git clone, pull instead of cloning:
+
+```bash
+git -C /tmp/olminstall pull
 ```
 
 Otherwise, if set, attempt clone:
@@ -117,10 +123,10 @@ ls <path>/complete-cleanup.sh
 
 Store `OLMINSTALL_PATH`.
 
-**Keep the repo current.** If `OLMINSTALL_PATH` is a git clone, the cleanup scripts (`cleanup.sh`, `complete-cleanup.sh`, `remove-stuck-crds.sh`) get bug fixes over time — a stale local clone can carry the very bugs noted in "Learned from Trial Runs". Check whether it's a git working copy:
+**Keep the repo current.** If `OLMINSTALL_PATH` is a git clone, the cleanup scripts (`cleanup.sh`, `complete-cleanup.sh`, `remove-stuck-crds.sh`) get bug fixes over time — a stale local clone can carry the very bugs noted in "Learned from Trial Runs". Check whether it's a git working copy (non-empty output means it is a git clone):
 
 ```bash
-test -d <OLMINSTALL_PATH>/.git && echo git || echo not-git
+ls -d <OLMINSTALL_PATH>/.git 2>/dev/null
 ```
 
 If it is a git clone, and the `OLMINSTALL_AUTO_UPDATE` preference is not already set, ask with `AskUserQuestion`:
@@ -292,10 +298,10 @@ bash remove-stuck-crds.sh -y --pattern 'maistra|servicemesh'
 
 Re-check the namespaces afterward — clearing the stuck CRDs commonly lets a hung namespace finish terminating on its own.
 
-Only if a namespace is *still* stuck after that, suggest the raw finalize edit as a **last resort** — it bypasses the owning controller's cleanup and can orphan cluster resources (ServiceMeshControlPlane, Istio CRs, etc.) behind the finalizer. Check `oc get namespace <ns> -o jsonpath='{.spec.finalizers}'` and the owning operator's logs first to understand why it's stuck:
-```
-For stuck Terminating namespaces (after remove-stuck-crds.sh and after checking why the finalizer isn't clearing):
-  oc get namespace <ns> -o json | jq '.spec.finalizers = []' | oc replace --raw "/api/v1/namespaces/<ns>/finalize" -f -
+Only if a namespace is *still* stuck after that, suggest the raw finalize edit as a **last resort** — it bypasses the owning controller's cleanup and can orphan cluster resources (ServiceMeshControlPlane, Istio CRs, etc.) behind the finalizer. Check `oc get namespace <ns> -o jsonpath='{.spec.finalizers}'` and the owning operator's logs first to understand why it's stuck. Only after `remove-stuck-crds.sh` and after confirming why the finalizer isn't clearing on its own, clear it directly:
+
+```bash
+oc get namespace <ns> -o json | jq '.spec.finalizers = []' | oc replace --raw "/api/v1/namespaces/<ns>/finalize" -f -
 ```
 
 ## Learned from Trial Runs
