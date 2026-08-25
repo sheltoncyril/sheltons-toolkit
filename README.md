@@ -27,6 +27,11 @@ A Claude Code plugin with opinionated skills for code review, Jira hygiene, and 
 | `deploy-component-manifests` | `/sheltons-toolkit:deploy-component-manifests <repo-path>` | Deploy custom component manifests into OLM operator |
 | `regression-test-runner` | `/sheltons-toolkit:regression-test-runner <component> [flags]` | End-to-end regression tests with failure analysis and Jira reporting |
 | `jenkins-ci-triage` | `/sheltons-toolkit:jenkins-ci-triage <build-url(s)>` | Fetch and classify RHOAI/ODH Jenkins CI failures (known/version-mismatch/cascading-infra/genuine), cross-reference fixes for backport |
+| `rosa-hcp-preflight` | `/sheltons-toolkit:rosa-hcp-preflight` | Verify aws/ocm/rosa auth points at the shared RHOAI accounts before creating a ROSA HCP cluster |
+| `rosa-hcp-create` | `/sheltons-toolkit:rosa-hcp-create [name] [--machine-type <t>] [--version <v>]` | Create a ROSA Hosted Control Plane cluster on shared infra (auto-picks least-tagged subnet pair) |
+| `rosa-hcp-idp` | `/sheltons-toolkit:rosa-hcp-idp <cluster> [user]` | Add an htpasswd identity provider and grant cluster-admin on a new ROSA HCP cluster |
+| `rosa-hcp-destroy` | `/sheltons-toolkit:rosa-hcp-destroy <cluster>` | Safely delete a ROSA HCP cluster and its operator roles (never the shared OIDC provider) |
+| `rosa-hcp-troubleshoot` | `/sheltons-toolkit:rosa-hcp-troubleshoot` | Diagnose ROSA HCP create failures (500, TagLimitExceeded, OIDC/account-role, saml/kinit) |
 
 ## How `review` works
 
